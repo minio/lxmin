@@ -48,7 +48,7 @@ const (
 func main() {
 	app := cli.NewApp()
 	app.Copyright = "MinIO, Inc."
-	app.Usage = "backup and restore LXC instances to object storage"
+	app.Usage = "backup and restore LXC instances from MinIO"
 	app.HideVersion = true
 	app.CustomAppHelpTemplate = `NAME:
   {{.Name}} - {{.Usage}}
@@ -268,7 +268,7 @@ FLAGS:
 
 			cmd = exec.Command("lxc", "import", backup)
 			cmd.Stdout = ioutil.Discard
-			fmt.Printf("Importing instance %s backup from %s... ", backup)
+			fmt.Printf("Importing instance %s backup from %s... ", instance, backup)
 			if err := cmd.Run(); err != nil {
 				return err
 			}
