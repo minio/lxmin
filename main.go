@@ -18,6 +18,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -41,9 +42,22 @@ import (
 )
 
 const (
-	tmplUp = `Uploading %s {{counters . }} {{percent . }} {{speed . "%%s/s" "? MiB/s"}}`
-	tmplDl = `Downloading %s {{counters . }} {{percent . }} {{speed . "%%s/s" "? MiB/s"}}`
+	tmplUp = `Uploading %s {{ bar . "<" "=" (cycle . "↖" "↗" "↘" "↙" ) "=" ">"}} {{speed . "%%s/s" "? MiB/s" | rndcolor }}`
+	tmplDl = `Downloading %s {{ bar . "<" "=" (cycle . "↖" "↗" "↘" "↙" ) "=" ">"}} {{speed . "%%s/s" "? MiB/s" | rndcolor }}`
 )
+
+func checkInstance(instance string) error {
+	var out bytes.Buffer
+	cmd := exec.Command("lxc", "list", instance, "-c", "n", "-f", "csv")
+	cmd.Stdout = &out
+	if err := cmd.Run(); err != nil {
+		return err
+	}
+	if strings.TrimSpace(out.String()) == instance {
+		return fmt.Errorf("'%s' instance is already running by this name", instance)
+	}
+	return nil
+}
 
 func main() {
 	app := cli.NewApp()
@@ -153,7 +167,7 @@ FLAGS:
 		var cmd *exec.Cmd
 		switch commandType {
 		case "backup":
-			backup = "backup_" + time.Now().Format("20060102150405") + ".tar.gz"
+			backup = "backup_" + time.Now().Format("2006-01-02-15-0405") + ".tar.gz"
 			cmd = exec.Command("lxc", "export", instance, backup)
 			cmd.Stdout = ioutil.Discard
 			fmt.Printf("Exporting backup from lxc %s... ", backup)
@@ -211,18 +225,6 @@ FLAGS:
 			var s strings.Builder
 			// Set table header
 			table := tablewriter.NewWriter(&s)
-			table.SetAutoWrapText(false)
-			table.SetAutoFormatHeaders(true)
-			table.SetHeaderAlignment(tablewriter.ALIGN_LEFT)
-			table.SetAlignment(tablewriter.ALIGN_LEFT)
-			table.SetCenterSeparator("")
-			table.SetColumnSeparator("")
-			table.SetRowSeparator("")
-			table.SetHeaderLine(false)
-			table.SetBorder(false)
-			table.SetTablePadding("\t") // pad with tabs
-			table.SetNoWhiteSpace(true)
-
 			table.SetHeader([]string{"Instance", "Name", "Created", "Size"})
 			var data [][]string
 			for obj := range s3Client.ListObjects(context.Background(), bucket, minio.ListObjectsOptions{
@@ -238,13 +240,20 @@ FLAGS:
 					obj.LastModified.Format(http.TimeFormat),
 					humanize.IBytes(uint64(obj.Size))})
 			}
-			table.AppendBulk(data)
-			table.Render()
+			if len(data) > 0 {
+				table.AppendBulk(data)
+				table.Render()
+			}
 			fmt.Print(s.String())
 		case "restore":
 			if backup == "" {
 				return errors.New("backup name is not optional")
 			}
+
+			if err := checkInstance(instance); err != nil {
+				return err
+			}
+
 			opts := minio.GetObjectOptions{}
 			obj, err := s3Client.GetObject(context.Background(), bucket, path.Join(instance, backup), opts)
 			if err != nil {
