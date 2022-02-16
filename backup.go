@@ -57,6 +57,9 @@ func backupMain(c *cli.Context) error {
 	instance := c.Args().Get(0)
 	backup := "backup_" + time.Now().Format("2006-01-02-15-0405") + ".tar.gz"
 	cmd := exec.Command("lxc", "export", instance, backup)
+	if c.Bool("optimize") {
+		cmd = exec.Command("lxc", "export", "--optimized-storage", instance, backup)
+	}
 	cmd.Stdout = ioutil.Discard
 	fmt.Printf("Exporting backup from lxc %s... ", backup)
 	if err := cmd.Run(); err != nil {
