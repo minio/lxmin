@@ -1,0 +1,56 @@
+project_name: lxmin
+
+release:
+   name_template: "Release version {{.Version}}"
+
+   github:
+    owner: minio
+    name: lxmin
+
+before:
+  hooks:
+    - go mod tidy -compat=1.17
+
+builds:
+  -
+    goos:
+      - linux
+      - darwin
+      - windows
+    goarch:
+      - amd64
+      - arm64
+      - ppc64le
+      - s390x
+    ignore:
+      - goos: windows
+        goarch: arm64
+    env:
+      - CGO_ENABLED=0
+    flags:
+      - -trimpath
+      - --tags=kqueue
+    ldflags:
+      - "-s -w -X main.version={{.Version}}"
+
+archives:
+  -
+    name_template: "{{ .ProjectName }}-{{ .Os }}-{{ .Arch }}"
+    format: binary
+
+nfpms:
+  -
+    vendor: MinIO, Inc.
+    homepage: https://github.com/minio/lxmin
+    maintainer: MinIO Development <dev@min.io>
+    description: backup and restore LXC instances from MinIO
+    license: GNU Affero General Public License v3.0
+    formats:
+      - deb
+      - rpm
+
+snapshot:
+  name_template: v0.0.0@{{.ShortCommit}}
+
+changelog:
+  sort: asc
