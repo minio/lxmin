@@ -39,13 +39,14 @@ func listMain(c *cli.Context) error {
 	var data [][]string
 	for obj := range globalS3Clnt.ListObjects(context.Background(), globalBucket, minio.ListObjectsOptions{
 		Prefix:       instance,
+		Recursive:    true,
 		WithMetadata: true,
 	}) {
 		if obj.Err != nil {
 			return obj.Err
 		}
 		inst := path.Clean(instance)
-		if inst == "" {
+		if inst == "" || inst == "." {
 			inst = path.Dir(obj.Key)
 		}
 		data = append(data, []string{
