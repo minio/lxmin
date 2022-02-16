@@ -8,7 +8,6 @@ require (
 	github.com/dustin/go-humanize v1.0.0
 	github.com/minio/cli v1.22.0
 	github.com/minio/minio-go/v7 v7.0.21
-	github.com/olekukonko/tablewriter v0.0.5
 )
 
 require (
