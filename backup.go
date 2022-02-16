@@ -22,6 +22,7 @@ import (
 	"errors"
 	"fmt"
 	"io/ioutil"
+	"mime"
 	"os"
 	"os/exec"
 	"path"
@@ -118,6 +119,7 @@ func backupMain(c *cli.Context) error {
 	_, err = globalS3Clnt.PutObject(context.Background(), globalBucket, path.Join(instance, backup), barReader, fi.Size(), minio.PutObjectOptions{
 		UserTags:     tagsSet.ToMap(),
 		UserMetadata: usermetadata,
+		ContentType:  mime.TypeByExtension(".tar.gz"),
 	})
 	barReader.Close()
 	return err

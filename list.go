@@ -37,6 +37,11 @@ EXAMPLES:
 `,
 }
 
+const (
+	tickCell      string = "✔ "
+	crossTickCell string = "✗ "
+)
+
 var (
 	subtle = lipgloss.AdaptiveColor{Light: "#D9DCCF", Dark: "#383838"}
 )
@@ -85,10 +90,10 @@ func listMain(c *cli.Context) error {
 		data["Name"] = append(data["Name"], path.Base(obj.Key))
 		data["Created"] = append(data["Created"], obj.LastModified.Format(http.TimeFormat))
 		data["Size"] = append(data["Size"], humanize.IBytes(uint64(obj.Size)))
-		if v, ok := obj.UserMetadata["optimized"]; ok {
-			data["Optimized"] = append(data["Optimized"], v)
+		if _, ok := obj.UserMetadata["X-Amz-Meta-Optimized"]; ok {
+			data["Optimized"] = append(data["Optimized"], tickCell)
 		} else {
-			data["Optimized"] = append(data["Optimized"], "false")
+			data["Optimized"] = append(data["Optimized"], crossTickCell)
 		}
 	}
 
