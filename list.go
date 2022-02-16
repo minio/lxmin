@@ -20,6 +20,22 @@ var listCmd = cli.Command{
 	Action:  listMain,
 	Before:  setGlobalsFromContext,
 	Flags:   globalFlags,
+	CustomHelpTemplate: `NAME:
+  {{.HelpName}} - {{.Usage}}
+
+USAGE:
+  {{.HelpName}} [FLAGS] [INSTANCENAME]
+
+FLAGS:
+  {{range .VisibleFlags}}{{.}}
+  {{end}}
+EXAMPLES:
+  1. List all backups:
+     {{.Prompt}} {{.HelpName}}
+
+  2. List all backups by instance name 'u2':
+     {{.Prompt}} {{.HelpName}} u2
+`,
 }
 
 func listMain(c *cli.Context) error {
@@ -27,7 +43,7 @@ func listMain(c *cli.Context) error {
 		cli.ShowAppHelpAndExit(c, 1) // last argument is exit code
 	}
 
-	instance := c.Args().Get(0)
+	instance := strings.TrimSpace(c.Args().Get(0))
 	if instance != "" {
 		instance = path.Clean(instance) + "/"
 	}

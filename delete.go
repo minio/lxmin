@@ -4,12 +4,11 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"net/url"
 	"path"
+	"strings"
 
 	"github.com/minio/cli"
 	"github.com/minio/minio-go/v7"
-	"github.com/minio/minio-go/v7/pkg/credentials"
 )
 
 var deleteFlags = []cli.Flag{
@@ -28,26 +27,6 @@ var (
 	globalBucket string
 )
 
-// Set global states. NOTE: It is deliberately kept monolithic to ensure we dont miss out any flags.
-func setGlobalsFromContext(c *cli.Context) error {
-	u, err := url.Parse(c.String("endpoint"))
-	if err != nil {
-		return err
-	}
-
-	s3Client, err := minio.New(u.Host, &minio.Options{
-		Creds:  credentials.NewStaticV4(c.String("access-key"), c.String("secret-key"), ""),
-		Secure: u.Scheme == "https",
-	})
-	if err != nil {
-		return err
-	}
-
-	globalS3Clnt = s3Client
-	globalBucket = c.String("bucket")
-	return nil
-}
-
 var deleteCmd = cli.Command{
 	Name:    "delete",
 	Aliases: []string{"rm"},
@@ -55,6 +34,22 @@ var deleteCmd = cli.Command{
 	Action:  deleteMain,
 	Before:  setGlobalsFromContext,
 	Flags:   append(deleteFlags, globalFlags...),
+	CustomHelpTemplate: `NAME:
+  {{.HelpName}} - {{.Usage}}
+
+USAGE:
+  {{.HelpName}} [FLAGS] INSTANCENAME BACKUPNAME
+
+TIP:
+   --all --force flags can be provided without 'BACKUPNAME' to delete all backups.
+
+FLAGS:
+  {{range .VisibleFlags}}{{.}}
+  {{end}}
+EXAMPLES:
+  1. Delete a backup 'backup_2022-02-16-04-1040.tar.gz' for instance 'u2':
+     {{.Prompt}} {{.HelpName}} u2 backup_2022-02-16-04-1040.tar.gz
+`,
 }
 
 func deleteMain(c *cli.Context) error {
@@ -62,9 +57,9 @@ func deleteMain(c *cli.Context) error {
 		cli.ShowAppHelpAndExit(c, 1) // last argument is exit code
 	}
 
+	instance := strings.TrimSpace(c.Args().Get(0))
+	backup := strings.TrimSpace(c.Args().Get(1))
 	deleteAll := c.Bool("all") && c.Bool("force")
-	instance := c.Args().Get(0)
-	backup := c.Args().Get(1)
 	if backup == "" && !deleteAll {
 		return errors.New("backup name is not optional without --all")
 	}

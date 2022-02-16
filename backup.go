@@ -19,16 +19,19 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io/ioutil"
 	"os"
 	"os/exec"
 	"path"
+	"strings"
 	"time"
 
 	"github.com/cheggaaa/pb/v3"
 	"github.com/minio/cli"
 	"github.com/minio/minio-go/v7"
+	"github.com/minio/minio-go/v7/pkg/tags"
 )
 
 var backupFlags = []cli.Flag{
@@ -37,7 +40,8 @@ var backupFlags = []cli.Flag{
 		Usage: "use storage driver optimized format",
 	},
 	cli.StringFlag{
-		Name: "tags",
+		Name:  "tags",
+		Usage: "add additional tags for the backup",
 	},
 }
 
@@ -47,6 +51,22 @@ var backupCmd = cli.Command{
 	Action: backupMain,
 	Before: setGlobalsFromContext,
 	Flags:  append(backupFlags, globalFlags...),
+	CustomHelpTemplate: `NAME:
+  {{.HelpName}} - {{.Usage}}
+
+USAGE:
+  {{.HelpName}} [FLAGS] INSTANCENAME
+
+FLAGS:
+  {{range .VisibleFlags}}{{.}}
+  {{end}}
+EXAMPLES:
+  1. Backup an instance 'u2' with storage optimized (faster imports):
+     {{.Prompt}} {{.HelpName}} u2 --optimized
+
+  2. Backup an instance 'u2', add custom tags of 'k1=v1&k2=v2' form:
+     {{.Prompt}} {{.HelpName}} u2 --optimized --tags "category=prod&project=backup"
+`,
 }
 
 func backupMain(c *cli.Context) error {
@@ -54,7 +74,17 @@ func backupMain(c *cli.Context) error {
 		cli.ShowAppHelpAndExit(c, 1) // last argument is exit code
 	}
 
-	instance := c.Args().Get(0)
+	tagsHdr := c.String("tags")
+	tagsSet, err := tags.Parse(tagsHdr, true)
+	if err != nil {
+		return err
+	}
+
+	instance := strings.TrimSpace(c.Args().Get(0))
+	if instance == "" {
+		return errors.New("instance name is not optional")
+	}
+
 	backup := "backup_" + time.Now().Format("2006-01-02-15-0405") + ".tar.gz"
 	cmd := exec.Command("lxc", "export", instance, backup)
 	if c.Bool("optimize") {
@@ -80,7 +110,9 @@ func backupMain(c *cli.Context) error {
 	progress.Set(pb.Bytes, true)
 	progress.SetTemplateString(fmt.Sprintf(tmplUp, backup))
 	barReader := progress.NewProxyReader(f)
-	_, err = globalS3Clnt.PutObject(context.Background(), globalBucket, path.Join(instance, backup), barReader, fi.Size(), minio.PutObjectOptions{})
+	_, err = globalS3Clnt.PutObject(context.Background(), globalBucket, path.Join(instance, backup), barReader, fi.Size(), minio.PutObjectOptions{
+		UserTags: tagsSet.ToMap(),
+	})
 	barReader.Close()
 	return err
 }

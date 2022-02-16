@@ -69,6 +69,7 @@ GLOBAL FLAGS:
 var appCmds = []cli.Command{
 	backupCmd,
 	restoreCmd,
+	infoCmd,
 	listCmd,
 	deleteCmd,
 }

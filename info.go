@@ -21,22 +21,18 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"io"
-	"io/ioutil"
-	"os"
-	"os/exec"
 	"path"
 	"strings"
 
-	"github.com/cheggaaa/pb/v3"
 	"github.com/minio/cli"
 	"github.com/minio/minio-go/v7"
+	"github.com/olekukonko/tablewriter"
 )
 
-var restoreCmd = cli.Command{
-	Name:   "restore",
-	Usage:  "restore an instance image from MinIO",
-	Action: restoreMain,
+var infoCmd = cli.Command{
+	Name:   "info",
+	Usage:  "display metadata of an instance image on MinIO",
+	Action: infoMain,
 	Before: setGlobalsFromContext,
 	Flags:  globalFlags,
 	CustomHelpTemplate: `NAME:
@@ -49,63 +45,43 @@ FLAGS:
   {{range .VisibleFlags}}{{.}}
   {{end}}
 EXAMPLES:
-  1. Restore an instance 'u2' from a backup 'backup_2022-02-16-04-1040.tar.gz':
+  1. Pretty print tags and additional metadata about a backup 'backup_2022-02-16-04-1040.tar.gz' for instance 'u2':
      {{.Prompt}} {{.HelpName}} u2 backup_2022-02-16-04-1040.tar.gz
 `,
 }
 
-func restoreMain(c *cli.Context) error {
+func infoMain(c *cli.Context) error {
 	if len(c.Args()) > 2 {
 		cli.ShowAppHelpAndExit(c, 1) // last argument is exit code
 	}
 
 	instance := strings.TrimSpace(c.Args().Get(0))
 	backup := strings.TrimSpace(c.Args().Get(1))
+
 	if backup == "" {
 		return errors.New("backup name is not optional")
 	}
 
-	if err := checkInstance(instance); err != nil {
-		return err
-	}
-
-	opts := minio.GetObjectOptions{}
-	obj, err := globalS3Clnt.GetObject(context.Background(), globalBucket, path.Join(instance, backup), opts)
+	tags, err := globalS3Clnt.GetObjectTagging(context.Background(), globalBucket, path.Join(instance, backup), minio.GetObjectTaggingOptions{})
 	if err != nil {
 		return err
 	}
 
-	oinfo, err := obj.Stat()
-	if err != nil {
-		return err
+	var s strings.Builder
+	// Set table header
+	table := tablewriter.NewWriter(&s)
+	table.SetHeader([]string{"Key", "Value"})
+	var data [][]string
+	for k, v := range tags.ToMap() {
+		data = append(data, []string{
+			k,
+			v,
+		})
 	}
-
-	progress := pb.Start64(oinfo.Size)
-	progress.Set(pb.Bytes, true)
-	progress.SetTemplateString(fmt.Sprintf(tmplDl, backup))
-	barReader := progress.NewProxyReader(obj)
-	w, err := os.Create(backup)
-	if err != nil {
-		barReader.Close()
-		return err
+	if len(data) > 0 {
+		table.AppendBulk(data)
 	}
-	io.Copy(w, barReader)
-	barReader.Close()
-
-	cmd := exec.Command("lxc", "import", backup)
-	cmd.Stdout = ioutil.Discard
-	fmt.Printf("Importing instance '%s', from '%s'... ", instance, backup)
-	if err := cmd.Run(); err != nil {
-		return err
-	}
-	fmt.Print("Done\n")
-
-	fmt.Printf("Starting instance '%s'... ", instance)
-	cmd = exec.Command("lxc", "start", instance)
-	cmd.Stdout = ioutil.Discard
-	if err := cmd.Run(); err != nil {
-		return err
-	}
-	fmt.Print("Done\n")
+	table.Render()
+	fmt.Print(s.String())
 	return nil
 }
