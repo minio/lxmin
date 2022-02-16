@@ -7,10 +7,10 @@ import (
 	"path"
 	"strings"
 
+	"github.com/charmbracelet/lipgloss"
 	"github.com/dustin/go-humanize"
 	"github.com/minio/cli"
 	"github.com/minio/minio-go/v7"
-	"github.com/olekukonko/tablewriter"
 )
 
 var listCmd = cli.Command{
@@ -32,11 +32,14 @@ FLAGS:
 EXAMPLES:
   1. List all backups:
      {{.Prompt}} {{.HelpName}}
-
   2. List all backups by instance name 'u2':
      {{.Prompt}} {{.HelpName}} u2
 `,
 }
+
+var (
+	subtle = lipgloss.AdaptiveColor{Light: "#D9DCCF", Dark: "#383838"}
+)
 
 func listMain(c *cli.Context) error {
 	if len(c.Args()) > 1 {
@@ -48,11 +51,24 @@ func listMain(c *cli.Context) error {
 		instance = path.Clean(instance) + "/"
 	}
 
-	var s strings.Builder
-	// Set table header
-	table := tablewriter.NewWriter(&s)
-	table.SetHeader([]string{"Instance", "Name", "Created", "Size"})
-	var data [][]string
+	var table strings.Builder
+
+	list := lipgloss.NewStyle().
+		BorderStyle(lipgloss.NormalBorder()).
+		BorderForeground(subtle)
+
+	listHeader := lipgloss.NewStyle().
+		PaddingLeft(1).
+		PaddingRight(1).
+		PaddingBottom(1).
+		Render
+
+	listItem := lipgloss.NewStyle().
+		PaddingLeft(1).
+		PaddingRight(1).
+		Render
+
+	data := map[string][]string{}
 	for obj := range globalS3Clnt.ListObjects(context.Background(), globalBucket, minio.ListObjectsOptions{
 		Prefix:       instance,
 		Recursive:    true,
@@ -65,16 +81,34 @@ func listMain(c *cli.Context) error {
 		if inst == "" || inst == "." {
 			inst = path.Dir(obj.Key)
 		}
-		data = append(data, []string{
-			inst,
-			path.Base(obj.Key),
-			obj.LastModified.Format(http.TimeFormat),
-			humanize.IBytes(uint64(obj.Size))})
+		data["Instance"] = append(data["Instance"], inst)
+		data["Name"] = append(data["Name"], path.Base(obj.Key))
+		data["Created"] = append(data["Created"], obj.LastModified.Format(http.TimeFormat))
+		data["Size"] = append(data["Size"], humanize.IBytes(uint64(obj.Size)))
+		if v, ok := obj.UserMetadata["optimized"]; ok {
+			data["Optimized"] = append(data["Optimized"], v)
+		} else {
+			data["Optimized"] = append(data["Optimized"], "false")
+		}
 	}
-	if len(data) > 0 {
-		table.AppendBulk(data)
-		table.Render()
+
+	items := func(header string) []string {
+		var itemRenders []string
+		itemRenders = append(itemRenders, listHeader(header))
+		for _, d := range data[header] {
+			itemRenders = append(itemRenders, listItem(d))
+		}
+		return itemRenders
 	}
-	fmt.Print(s.String())
+
+	renderLists := []string{}
+	for _, header := range []string{"Instance", "Name", "Created", "Size", "Optimized"} {
+		renderLists = append(renderLists, list.Render(lipgloss.JoinVertical(lipgloss.Left, items(header)...)))
+	}
+	lists := lipgloss.JoinHorizontal(lipgloss.Top, renderLists...)
+	table.WriteString(lipgloss.JoinHorizontal(lipgloss.Top, lists))
+
+	docStyle := lipgloss.NewStyle().Padding(1, 2, 1, 2)
+	fmt.Println(docStyle.Render(table.String()))
 	return nil
 }

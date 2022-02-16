@@ -44,19 +44,28 @@ Exporting backup from lxc backup_2022-02-16-04-1040.tar.gz... Done
 Uploading backup_2022-02-16-04-1040.tar.gz [==========================================================================================================================] 101.25 MiB/s
 ```
 
+### Create a backup (optimized supported for ZFS and BTRFS storage pools)
+
+Creating optimized backups when possible is a good practice, allows for faster restore times for your backups during disaster recovery.
+
+```sh
+lxmin backup u2 --optimized
+Exporting backup from lxc backup_2022-02-16-04-1040.tar.gz... Done
+Uploading backup_2022-02-16-04-1040.tar.gz [==========================================================================================================================] 101.25 MiB/s
+```
+
 ### List all backups
 
 ```sh
 lxmin list u2
-+----------+----------------------------------+-------------------------------+---------+
-| INSTANCE |               NAME               |            CREATED            |  SIZE   |
-+----------+----------------------------------+-------------------------------+---------+
-| u2       | backup_2022-02-15-18-2642.tar.gz | Tue, 15 Feb 2022 18:28:04 GMT | 653 MiB |
-| u2       | backup_2022-02-15-18-4259.tar.gz | Tue, 15 Feb 2022 18:44:21 GMT | 653 MiB |
-| u2       | backup_2022-02-15-21-0930.tar.gz | Tue, 15 Feb 2022 21:10:53 GMT | 654 MiB |
-| u2       | backup_2022-02-16-04-0841.tar.gz | Wed, 16 Feb 2022 04:10:05 GMT | 654 MiB |
-| u2       | backup_2022-02-16-04-1040.tar.gz | Wed, 16 Feb 2022 04:12:04 GMT | 654 MiB |
-+----------+----------------------------------+-------------------------------+---------+
+                                                
+  ┌──────────┐┌──────────────────────────────────┐┌───────────────────────────────┐┌─────────┐ 
+  │ Instance ││ Name                             ││ Created                       ││ Size    │ 
+  │          ││                                  ││                               ││         │ 
+  │ u2       ││ backup_2022-02-16-05-0102.tar.gz ││ Wed, 16 Feb 2022 05:01:56 GMT ││ 666 MiB │ 
+  │ u2       ││ backup_2022-02-16-22-4725.tar.gz ││ Wed, 16 Feb 2022 22:49:07 GMT ││ 871 MiB │ 
+  └──────────┘└──────────────────────────────────┘└───────────────────────────────┘└─────────┘ 
+
 ```
 
 ### Restore a backup
@@ -66,6 +75,21 @@ lxmin restore u2 backup_2022-02-16-04-1040.tar.gz
 Downloading backup_2022-02-16-04-1040.tar.gz [========================================================================================================================] 212.41 MiB/s
 Importing instance 'u2', from 'backup_2022-02-16-04-1040.tar.gz'... Done
 Starting instance 'u2'... Done
+```
+
+### Pretty print any tags on a backup
+
+```sh
+lxmin info u2 backup_2022-02-16-22-4725.tar.gz
+                      
+  ┌──────┐┌────────┐ 
+  │ Key  ││ Value  │ 
+  │      ││        │ 
+  │ key2 ││ value2 │ 
+  │ key3 ││ value3 │ 
+  │ key1 ││ value1 │ 
+  └──────┘└────────┘ 
+                      
 ```
 
 ### Delete a backup

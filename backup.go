@@ -63,7 +63,6 @@ FLAGS:
 EXAMPLES:
   1. Backup an instance 'u2' with storage optimized (faster imports):
      {{.Prompt}} {{.HelpName}} u2 --optimized
-
   2. Backup an instance 'u2', add custom tags of 'k1=v1&k2=v2' form:
      {{.Prompt}} {{.HelpName}} u2 --optimized --tags "category=prod&project=backup"
 `,
@@ -87,7 +86,8 @@ func backupMain(c *cli.Context) error {
 
 	backup := "backup_" + time.Now().Format("2006-01-02-15-0405") + ".tar.gz"
 	cmd := exec.Command("lxc", "export", instance, backup)
-	if c.Bool("optimize") {
+	optimized := c.Bool("optimize")
+	if optimized {
 		cmd = exec.Command("lxc", "export", "--optimized-storage", instance, backup)
 	}
 	cmd.Stdout = ioutil.Discard
@@ -106,12 +106,18 @@ func backupMain(c *cli.Context) error {
 	if err != nil {
 		return err
 	}
+	usermetadata := map[string]string{}
+	if optimized {
+		// Save additional information if the backup is optimized or not.
+		usermetadata["optimized"] = "true"
+	}
 	progress := pb.Start64(fi.Size())
 	progress.Set(pb.Bytes, true)
 	progress.SetTemplateString(fmt.Sprintf(tmplUp, backup))
 	barReader := progress.NewProxyReader(f)
 	_, err = globalS3Clnt.PutObject(context.Background(), globalBucket, path.Join(instance, backup), barReader, fi.Size(), minio.PutObjectOptions{
-		UserTags: tagsSet.ToMap(),
+		UserTags:     tagsSet.ToMap(),
+		UserMetadata: usermetadata,
 	})
 	barReader.Close()
 	return err

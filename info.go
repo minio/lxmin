@@ -24,14 +24,14 @@ import (
 	"path"
 	"strings"
 
+	"github.com/charmbracelet/lipgloss"
 	"github.com/minio/cli"
 	"github.com/minio/minio-go/v7"
-	"github.com/olekukonko/tablewriter"
 )
 
 var infoCmd = cli.Command{
 	Name:   "info",
-	Usage:  "display metadata of an instance image on MinIO",
+	Usage:  "pretty print tags on an instance image on MinIO",
 	Action: infoMain,
 	Before: setGlobalsFromContext,
 	Flags:  globalFlags,
@@ -45,7 +45,7 @@ FLAGS:
   {{range .VisibleFlags}}{{.}}
   {{end}}
 EXAMPLES:
-  1. Pretty print tags and additional metadata about a backup 'backup_2022-02-16-04-1040.tar.gz' for instance 'u2':
+  1. Pretty print tags for a backup 'backup_2022-02-16-04-1040.tar.gz' for instance 'u2':
      {{.Prompt}} {{.HelpName}} u2 backup_2022-02-16-04-1040.tar.gz
 `,
 }
@@ -67,21 +67,46 @@ func infoMain(c *cli.Context) error {
 		return err
 	}
 
-	var s strings.Builder
-	// Set table header
-	table := tablewriter.NewWriter(&s)
-	table.SetHeader([]string{"Key", "Value"})
-	var data [][]string
+	var table strings.Builder
+
+	list := lipgloss.NewStyle().
+		BorderStyle(lipgloss.NormalBorder()).
+		BorderForeground(subtle)
+
+	listHeader := lipgloss.NewStyle().
+		PaddingLeft(1).
+		PaddingRight(1).
+		PaddingBottom(1).
+		Render
+
+	listItem := lipgloss.NewStyle().
+		PaddingLeft(1).
+		PaddingRight(1).
+		Render
+
+	data := map[string][]string{}
 	for k, v := range tags.ToMap() {
-		data = append(data, []string{
-			k,
-			v,
-		})
+		data["Key"] = append(data["Key"], k)
+		data["Value"] = append(data["Value"], v)
 	}
-	if len(data) > 0 {
-		table.AppendBulk(data)
+
+	items := func(header string) []string {
+		var itemRenders []string
+		itemRenders = append(itemRenders, listHeader(header))
+		for _, d := range data[header] {
+			itemRenders = append(itemRenders, listItem(d))
+		}
+		return itemRenders
 	}
-	table.Render()
-	fmt.Print(s.String())
+
+	renderLists := []string{}
+	for _, header := range []string{"Key", "Value"} {
+		renderLists = append(renderLists, list.Render(lipgloss.JoinVertical(lipgloss.Left, items(header)...)))
+	}
+	lists := lipgloss.JoinHorizontal(lipgloss.Top, renderLists...)
+	table.WriteString(lipgloss.JoinHorizontal(lipgloss.Top, lists))
+
+	docStyle := lipgloss.NewStyle().Padding(1, 2, 1, 2)
+	fmt.Println(docStyle.Render(table.String()))
 	return nil
 }
