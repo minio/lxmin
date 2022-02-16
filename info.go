@@ -106,7 +106,7 @@ func infoMain(c *cli.Context) error {
 	lists := lipgloss.JoinHorizontal(lipgloss.Top, renderLists...)
 	table.WriteString(lipgloss.JoinHorizontal(lipgloss.Top, lists))
 
-	docStyle := lipgloss.NewStyle().Padding(1, 2, 1, 2)
+	docStyle := lipgloss.NewStyle()
 	fmt.Println(docStyle.Render(table.String()))
 	return nil
 }
