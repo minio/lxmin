@@ -61,7 +61,7 @@ func backupMain(c *cli.Context) error {
 		cmd = exec.Command("lxc", "export", "--optimized-storage", instance, backup)
 	}
 	cmd.Stdout = ioutil.Discard
-	fmt.Printf("Exporting backup from lxc %s... ", backup)
+	fmt.Printf("Exporting backup from lxc '%s'... ", backup)
 	if err := cmd.Run(); err != nil {
 		return err
 	}

@@ -86,9 +86,9 @@ func deleteMain(c *cli.Context) error {
 		}
 	}
 	if deleteAll {
-		fmt.Printf("All backups for %s deleted successfully\n", instance)
+		fmt.Printf("All backups for '%s' deleted successfully\n", instance)
 	} else {
-		fmt.Printf("Backup %s deleted successfully\n", backup)
+		fmt.Printf("Backup '%s' deleted successfully\n", backup)
 	}
 	return nil
 }

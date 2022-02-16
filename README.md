@@ -1,29 +1,27 @@
 # lxmin
 
-Backup and restore LXC instances to object storage
+Backup and restore LXC instances from MinIO
 
 ## Usage
 
 ```sh
 NAME:
-  lxmin - backup and restore LXC instances to object storage
+  lxmin - backup and restore LXC instances from MinIO
 
 USAGE:
-  lxmin COMMAND INSTANCENAME [FLAGS]
+  lxmin [FLAGS] COMMAND [COMMAND FLAGS | -h] [ARGUMENTS...]
 
-COMMAND:
-  backup  backup an instance image to MinIO
-  restore restore an instance from MinIO
-  list    list all backups from MinIO 
-  delete  deletes a specific backup by 'name' for an instance from MinIO
+COMMANDS:
+  backup      backup an instance image to MinIO
+  restore     restore an instance image from MinIO
+  list, ls    list all backups from MinIO
+  delete, rm  deletes a specific backup by 'name' for an instance from MinIO
 
-FLAGS:
+GLOBAL FLAGS:
   --endpoint value    endpoint for S3 API call(s) [$LXMIN_ENDPOINT]
   --bucket value      bucket on MinIO to save/restore backup(s) [$LXMIN_BUCKET]
   --access-key value  access key credential for S3 API [$LXMIN_ACCESS_KEY]
   --secret-key value  secret key credential for S3 API [$LXMIN_SECRET_KEY]
-  --all               delete all backups for an instance, only valid for 'delete' command
-  --force             allow all backups to be deleted, only valid when '--all' is specified
   --help, -h          show help
 ```
 
@@ -42,40 +40,46 @@ export LXMIN_SECRET_KEY="minioadmin"
 
 ```sh
 lxmin backup u2
-Exporting backup from lxc backup_20220215100258.tar.gz... Done
-Uploading backup_20220215100258.tar.gz 652.80 MiB / 652.80 MiB 100.00% 103.70 MiB/s
+Exporting backup from lxc backup_2022-02-16-04-1040.tar.gz... Done
+Uploading backup_2022-02-16-04-1040.tar.gz [==========================================================================================================================] 101.25 MiB/s
 ```
 
 ### List all backups
 
 ```sh
 lxmin list u2
-INSTANCE        NAME                            CREATED                         SIZE 
-u2              backup_20220215092457.tar.gz    Tue, 15 Feb 2022 09:26:18 GMT   652 MiB
-u2              backup_20220215100258.tar.gz    Tue, 15 Feb 2022 10:04:22 GMT   653 MiB
++----------+----------------------------------+-------------------------------+---------+
+| INSTANCE |               NAME               |            CREATED            |  SIZE   |
++----------+----------------------------------+-------------------------------+---------+
+| u2       | backup_2022-02-15-18-2642.tar.gz | Tue, 15 Feb 2022 18:28:04 GMT | 653 MiB |
+| u2       | backup_2022-02-15-18-4259.tar.gz | Tue, 15 Feb 2022 18:44:21 GMT | 653 MiB |
+| u2       | backup_2022-02-15-21-0930.tar.gz | Tue, 15 Feb 2022 21:10:53 GMT | 654 MiB |
+| u2       | backup_2022-02-16-04-0841.tar.gz | Wed, 16 Feb 2022 04:10:05 GMT | 654 MiB |
+| u2       | backup_2022-02-16-04-1040.tar.gz | Wed, 16 Feb 2022 04:12:04 GMT | 654 MiB |
++----------+----------------------------------+-------------------------------+---------+
 ```
 
 ### Restore a backup
 
 ```sh
-lxmin restore u2 backup_20220215092457.tar.gz
-Downloading backup_20220215092457.tar.gz 652.52 MiB / 652.52 MiB 100.00% 217.97 MiB/s
-Importing instance u2 backup from backup_20220215092457.tar.gz... Done
-Starting instance u2... Done
+lxmin restore u2 backup_2022-02-16-04-1040.tar.gz
+Downloading backup_2022-02-16-04-1040.tar.gz [========================================================================================================================] 212.41 MiB/s
+Importing instance 'u2', from 'backup_2022-02-16-04-1040.tar.gz'... Done
+Starting instance 'u2'... Done
 ```
 
 ### Delete a backup
 
-Delete a specific backup by name `backup_20220215092457.tar.gz`
+Delete a specific backup by name `backup_2022-02-16-04-1040.tar.gz`
 
 ```sh
-lxmin delete u2 backup_20220215092457.tar.gz
-Backup backup_20220215092457.tar.gz deleted successfully
+lxmin delete u2 backup_2022-02-16-04-1040.tar.gz
+Backup backup_2022-02-16-04-1040.tar.gz deleted successfully
 ```
 
 Delete all backups
 
 ```sh
-lxmin --all --force delete u2 
+lxmin delete u2 --all --force
 All backups for u2 deleted successfully
 ```

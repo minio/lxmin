@@ -64,13 +64,13 @@ func restoreMain(c *cli.Context) error {
 
 	cmd := exec.Command("lxc", "import", backup)
 	cmd.Stdout = ioutil.Discard
-	fmt.Printf("Importing instance %s backup from %s... ", instance, backup)
+	fmt.Printf("Importing instance '%s', from '%s'... ", instance, backup)
 	if err := cmd.Run(); err != nil {
 		return err
 	}
 	fmt.Print("Done\n")
 
-	fmt.Printf("Starting instance %s... ", instance)
+	fmt.Printf("Starting instance '%s'... ", instance)
 	cmd = exec.Command("lxc", "start", instance)
 	cmd.Stdout = ioutil.Discard
 	if err := cmd.Run(); err != nil {
