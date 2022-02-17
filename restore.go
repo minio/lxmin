@@ -19,7 +19,6 @@ package main
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"io"
 	"io/ioutil"
@@ -62,9 +61,13 @@ func restoreMain(c *cli.Context) error {
 	}
 
 	instance := strings.TrimSpace(c.Args().Get(0))
+	if instance == "" {
+		cli.ShowAppHelpAndExit(c, 1) // last argument is exit code
+	}
+
 	backup := strings.TrimSpace(c.Args().Get(1))
 	if backup == "" {
-		return errors.New("backup name is not optional")
+		cli.ShowAppHelpAndExit(c, 1) // last argument is exit code
 	}
 
 	if err := checkInstance(instance); err != nil {
@@ -99,9 +102,9 @@ func restoreMain(c *cli.Context) error {
 
 	p := tea.NewProgram(initSpinnerUI(lxcOpts{
 		instance: instance,
-		backup:   backup,
-		message:  `Importing backup for instance (%s) <- (%s): %s`,
+		message:  `Launching instance (%s): %s`,
 	}))
+
 	var wg sync.WaitGroup
 	wg.Add(1)
 	go func() {
@@ -115,19 +118,17 @@ func restoreMain(c *cli.Context) error {
 		if err := cmd.Run(); err != nil {
 			os.Exit(1)
 		}
+
+		cmd = exec.Command("lxc", "start", instance)
+		cmd.Stdout = ioutil.Discard
+		if err := cmd.Run(); err != nil {
+			os.Exit(1)
+		}
+
 		p.Send(true)
 	}()
 
 	wg.Wait()
 
-	defer os.Remove(backup)
-
-	fmt.Printf("Starting imported instance (%s): ", instance)
-	cmd = exec.Command("lxc", "start", instance)
-	cmd.Stdout = ioutil.Discard
-	if err := cmd.Run(); err != nil {
-		return err
-	}
-	fmt.Print("success\n")
-	return nil
+	return os.Remove(backup)
 }

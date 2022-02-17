@@ -19,13 +19,13 @@ package main
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"io/ioutil"
 	"mime"
 	"os"
 	"os/exec"
 	"path"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -84,6 +84,11 @@ func backupMain(c *cli.Context) error {
 		cli.ShowAppHelpAndExit(c, 1) // last argument is exit code
 	}
 
+	instance := strings.TrimSpace(c.Args().Get(0))
+	if instance == "" {
+		cli.ShowAppHelpAndExit(c, 1) // last argument is exit code
+	}
+
 	partSize := c.Int64("part-size")
 	if partSize == 0 {
 		partSize = 64 * humanize.MiByte
@@ -93,11 +98,6 @@ func backupMain(c *cli.Context) error {
 	tagsSet, err := tags.Parse(tagsHdr, true)
 	if err != nil {
 		return err
-	}
-
-	instance := strings.TrimSpace(c.Args().Get(0))
-	if instance == "" {
-		return errors.New("instance name is not optional")
 	}
 
 	backup := "backup_" + time.Now().Format("2006-01-02-15-0405") + ".tar.gz"
@@ -110,8 +110,7 @@ func backupMain(c *cli.Context) error {
 
 	p := tea.NewProgram(initSpinnerUI(lxcOpts{
 		instance: instance,
-		backup:   backup,
-		message:  `Exporting backup for instance (%s) -> (%s): %s`,
+		message:  `Preparing backup for (%s) instance: %s`,
 	}))
 	var wg sync.WaitGroup
 	wg.Add(1)
@@ -140,21 +139,23 @@ func backupMain(c *cli.Context) error {
 	if err != nil {
 		return err
 	}
+
 	usermetadata := map[string]string{}
-	if optimized {
-		// Save additional information if the backup is optimized or not.
-		usermetadata["optimized"] = "true"
-	}
+	// Save additional information if the backup is optimized or not.
+	usermetadata["optimized"] = strconv.FormatBool(optimized)
+	usermetadata["compressed"] = "true" // This is always true.
+
 	progress := pb.Start64(fi.Size())
 	progress.Set(pb.Bytes, true)
 	progress.SetTemplateString(fmt.Sprintf(tmplUp, backup))
 	barReader := progress.NewProxyReader(f)
-	_, err = globalS3Clnt.PutObject(context.Background(), globalBucket, path.Join(instance, backup), barReader, fi.Size(), minio.PutObjectOptions{
+	opts := minio.PutObjectOptions{
 		UserTags:     tagsSet.ToMap(),
 		PartSize:     uint64(partSize),
 		UserMetadata: usermetadata,
 		ContentType:  mime.TypeByExtension(".tar.gz"),
-	})
+	}
+	_, err = globalS3Clnt.PutObject(context.Background(), globalBucket, path.Join(instance, backup), barReader, fi.Size(), opts)
 	barReader.Close()
 	return err
 }

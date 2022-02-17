@@ -1,9 +1,25 @@
+// Copyright (c) 2015-2021 MinIO, Inc.
+//
+// This project is part of MinIO Object Storage stack
+//
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU Affero General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or
+// (at your option) any later version.
+//
+// This program is distributed in the hope that it will be useful
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU Affero General Public License for more details.
+//
+// You should have received a copy of the GNU Affero General Public License
+// along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
 package main
 
 import (
 	"context"
 	"fmt"
-	"net/http"
 	"path"
 	"strings"
 
@@ -88,7 +104,7 @@ func listMain(c *cli.Context) error {
 		}
 		data["Instance"] = append(data["Instance"], inst)
 		data["Name"] = append(data["Name"], path.Base(obj.Key))
-		data["Created"] = append(data["Created"], obj.LastModified.Format(http.TimeFormat))
+		data["Created"] = append(data["Created"], obj.LastModified.Format(printDate))
 		data["Size"] = append(data["Size"], humanize.IBytes(uint64(obj.Size)))
 		if _, ok := obj.UserMetadata["X-Amz-Meta-Optimized"]; ok {
 			data["Optimized"] = append(data["Optimized"], tickCell)

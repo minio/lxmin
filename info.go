@@ -19,12 +19,11 @@ package main
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"path"
 	"strings"
 
-	"github.com/charmbracelet/lipgloss"
+	"github.com/dustin/go-humanize"
 	"github.com/minio/cli"
 	"github.com/minio/minio-go/v7"
 )
@@ -56,57 +55,84 @@ func infoMain(c *cli.Context) error {
 	}
 
 	instance := strings.TrimSpace(c.Args().Get(0))
-	backup := strings.TrimSpace(c.Args().Get(1))
-
-	if backup == "" {
-		return errors.New("backup name is not optional")
+	if instance == "" {
+		cli.ShowAppHelpAndExit(c, 1) // last argument is exit code
 	}
 
-	tags, err := globalS3Clnt.GetObjectTagging(context.Background(), globalBucket, path.Join(instance, backup), minio.GetObjectTaggingOptions{})
+	backup := strings.TrimSpace(c.Args().Get(1))
+	if backup == "" {
+		cli.ShowAppHelpAndExit(c, 1) // last argument is exit code
+	}
+
+	opts := minio.GetObjectTaggingOptions{}
+	tags, err := globalS3Clnt.GetObjectTagging(context.Background(), globalBucket, path.Join(instance, backup), opts)
 	if err != nil {
 		return err
 	}
 
-	var table strings.Builder
-
-	list := lipgloss.NewStyle().
-		BorderStyle(lipgloss.NormalBorder()).
-		BorderForeground(subtle)
-
-	listHeader := lipgloss.NewStyle().
-		PaddingLeft(1).
-		PaddingRight(1).
-		PaddingBottom(1).
-		Render
-
-	listItem := lipgloss.NewStyle().
-		PaddingLeft(1).
-		PaddingRight(1).
-		Render
-
-	data := map[string][]string{}
-	for k, v := range tags.ToMap() {
-		data["Key"] = append(data["Key"], k)
-		data["Value"] = append(data["Value"], v)
+	sopts := minio.StatObjectOptions{}
+	objInfo, err := globalS3Clnt.StatObject(context.Background(), globalBucket, path.Join(instance, backup), sopts)
+	if err != nil {
+		return err
 	}
 
-	items := func(header string) []string {
-		var itemRenders []string
-		itemRenders = append(itemRenders, listHeader(header))
-		for _, d := range data[header] {
-			itemRenders = append(itemRenders, listItem(d))
+	var msgBuilder strings.Builder
+	// Format properly for alignment based on maxKey leng
+	backup = fmt.Sprintf("%-10s: %s", "Name", backup)
+	msgBuilder.WriteString(backup + "\n")
+	msgBuilder.WriteString(fmt.Sprintf("%-10s: %s ", "Date", objInfo.LastModified.Format(printDate)) + "\n")
+	msgBuilder.WriteString(fmt.Sprintf("%-10s: %-6s ", "Size", humanize.IBytes(uint64(objInfo.Size))) + "\n")
+
+	maxTagsKey := 0
+	for k := range tags.ToMap() {
+		if len(k) > maxTagsKey {
+			maxTagsKey = len(k)
 		}
-		return itemRenders
 	}
 
-	renderLists := []string{}
-	for _, header := range []string{"Key", "Value"} {
-		renderLists = append(renderLists, list.Render(lipgloss.JoinVertical(lipgloss.Left, items(header)...)))
+	maxKeyMetadata := 0
+	for k := range objInfo.UserMetadata {
+		if !strings.HasPrefix(strings.ToLower(k), serverEncryptionKeyPrefix) {
+			switch k {
+			case "Optimized", "Compressed":
+				if len(k) > maxKeyMetadata {
+					maxKeyMetadata = len(k)
+				}
+			}
+		}
 	}
-	lists := lipgloss.JoinHorizontal(lipgloss.Top, renderLists...)
-	table.WriteString(lipgloss.JoinHorizontal(lipgloss.Top, lists))
 
-	docStyle := lipgloss.NewStyle()
-	fmt.Println(docStyle.Render(table.String()))
+	maxPad := maxTagsKey
+	if maxTagsKey < maxKeyMetadata {
+		maxPad = maxKeyMetadata
+	}
+
+	if maxTagsKey > 0 {
+		msgBuilder.WriteString(fmt.Sprintf("%-10s:", "Tags") + "\n")
+		for k, v := range tags.ToMap() {
+			msgBuilder.WriteString(fmt.Sprintf("  %-*.*s : %s ", maxPad, maxPad, k, v) + "\n")
+		}
+	}
+
+	if maxKeyMetadata > 0 {
+		msgBuilder.WriteString(fmt.Sprintf("%-10s:", "Metadata") + "\n")
+		for k, v := range objInfo.UserMetadata {
+			if !strings.HasPrefix(strings.ToLower(k), serverEncryptionKeyPrefix) {
+				switch k {
+				case "Compressed", "Optimized":
+					if v == "true" {
+						v = tickCell
+					} else {
+						v = crossTickCell
+					}
+				default:
+					continue
+				}
+				msgBuilder.WriteString(fmt.Sprintf("  %-*.*s : %s ", maxKeyMetadata, maxKeyMetadata, k, v) + "\n")
+			}
+		}
+	}
+
+	fmt.Println(msgBuilder.String())
 	return nil
 }

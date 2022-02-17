@@ -28,6 +28,11 @@ import (
 	"github.com/charmbracelet/lipgloss"
 )
 
+const (
+	printDate                 = "2006-01-02 15:04:05 MST"
+	serverEncryptionKeyPrefix = "x-amz-server-side-encryption"
+)
+
 type spinnerUI struct {
 	spinner  spinner.Model
 	quitting bool
@@ -67,11 +72,11 @@ func (m *spinnerUI) View() string {
 		spin = "success\n"
 	}
 
-	return fmt.Sprintf(m.opts.message, m.opts.instance, m.opts.backup, spin)
+	return fmt.Sprintf(m.opts.message, m.opts.instance, spin)
 }
 
 type lxcOpts struct {
-	instance, backup, message string
+	instance, message string
 }
 
 func initSpinnerUI(opts lxcOpts) *spinnerUI {

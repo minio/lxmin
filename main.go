@@ -26,30 +26,30 @@ import (
 )
 
 const (
-	tmplUp = `Uploading %s {{ bar . "[" "=" (cycle . "↖" "↗" "↘" "↙" ) "=" "]"}} {{speed . "%%s/s" "? MiB/s" | rndcolor }}`
-	tmplDl = `Downloading %s {{ bar . "[" "=" (cycle . "↖" "↗" "↘" "↙" ) "=" "]"}} {{speed . "%%s/s" "? MiB/s" | rndcolor }}`
+	tmplUp = `Uploading %s {{ bar . "┃" "▓" "▓" "░" "┃"}} {{speed . "%%s/s" "? MiB/s"}}`
+	tmplDl = `Downloading %s {{ bar . "┃" "▓" "▓" "░" "┃"}} {{speed . "%%s/s" "? MiB/s"}}`
 )
 
 var globalFlags = []cli.Flag{
 	cli.StringFlag{
 		Name:   "endpoint",
 		EnvVar: "LXMIN_ENDPOINT",
-		Usage:  "endpoint for S3 API call(s)",
+		Usage:  "endpoint for MinIO server",
 	},
 	cli.StringFlag{
 		Name:   "bucket",
 		EnvVar: "LXMIN_BUCKET",
-		Usage:  "bucket on MinIO to save/restore backup(s)",
+		Usage:  "bucket to save/restore backup(s)",
 	},
 	cli.StringFlag{
 		Name:   "access-key",
 		EnvVar: "LXMIN_ACCESS_KEY",
-		Usage:  "access key credential for S3 API",
+		Usage:  "access key credential",
 	},
 	cli.StringFlag{
 		Name:   "secret-key",
 		EnvVar: "LXMIN_SECRET_KEY",
-		Usage:  "secret key credential for S3 API",
+		Usage:  "secret key credential",
 	},
 }
 
@@ -64,7 +64,13 @@ COMMANDS:
   {{end}}{{if .VisibleFlags}}
 GLOBAL FLAGS:
   {{range .VisibleFlags}}{{.}}
-  {{end}}{{end}}`
+  {{end}}{{end}}
+ENVIRONMENT VARIABLES:
+  LXMIN_ENDPOINT      endpoint for MinIO server
+  LXMIN_BUCKET        bucket to save/restore backup(s)
+  LXMIN_ACCESS_KEY    access key credential
+  LXMIN_SECRET_KEY    secret key credential
+`
 
 var appCmds = []cli.Command{
 	backupCmd,
@@ -77,7 +83,7 @@ var appCmds = []cli.Command{
 func main() {
 	app := cli.NewApp()
 	app.Copyright = "MinIO, Inc."
-	app.Usage = "backup and restore LXC instances from MinIO"
+	app.Usage = "backup and restore LXC instances with MinIO"
 	app.CustomAppHelpTemplate = helpTemplate
 	app.HideHelpCommand = true
 	app.HideVersion = true
@@ -94,8 +100,7 @@ func main() {
 		return err
 	}
 
-	err := app.Run(os.Args)
-	if err != nil {
+	if err := app.Run(os.Args); err != nil {
 		log.Fatal(err)
 	}
 }
