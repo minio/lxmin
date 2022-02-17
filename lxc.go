@@ -22,7 +22,67 @@ import (
 	"fmt"
 	"os/exec"
 	"strings"
+
+	"github.com/charmbracelet/bubbles/spinner"
+	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 )
+
+type spinnerUI struct {
+	spinner  spinner.Model
+	quitting bool
+	opts     lxcOpts
+}
+
+func (m *spinnerUI) Init() tea.Cmd {
+	return m.spinner.Tick
+}
+
+func (m *spinnerUI) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	switch msg := msg.(type) {
+	case tea.KeyMsg:
+		switch msg.String() {
+		case "ctrl+c":
+			m.quitting = true
+			return m, tea.Quit
+		default:
+			return m, nil
+		}
+	case spinner.TickMsg:
+		var cmd tea.Cmd
+		m.spinner, cmd = m.spinner.Update(msg)
+		return m, cmd
+	case bool:
+		if msg {
+			m.quitting = true
+			return m, tea.Quit
+		}
+	}
+	return m, nil
+}
+
+func (m *spinnerUI) View() string {
+	spin := m.spinner.View()
+	if m.quitting {
+		spin = "success\n"
+	}
+
+	return fmt.Sprintf(m.opts.message, m.opts.instance, m.opts.backup, spin)
+}
+
+type lxcOpts struct {
+	instance, backup, message string
+}
+
+func initSpinnerUI(opts lxcOpts) *spinnerUI {
+	s := spinner.New()
+	s.Spinner = spinner.Dot
+	s.Style = lipgloss.NewStyle().Foreground(lipgloss.Color("205"))
+	return &spinnerUI{
+		spinner: s,
+		opts:    opts,
+	}
+}
 
 func checkInstance(instance string) error {
 	var out bytes.Buffer

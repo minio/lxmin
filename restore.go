@@ -27,7 +27,9 @@ import (
 	"os/exec"
 	"path"
 	"strings"
+	"sync"
 
+	tea "github.com/charmbracelet/bubbletea"
 	"github.com/cheggaaa/pb/v3"
 	"github.com/minio/cli"
 	"github.com/minio/minio-go/v7"
@@ -94,18 +96,38 @@ func restoreMain(c *cli.Context) error {
 
 	cmd := exec.Command("lxc", "import", backup)
 	cmd.Stdout = ioutil.Discard
-	fmt.Printf("Importing instance '%s', from '%s'... ", instance, backup)
-	if err := cmd.Run(); err != nil {
-		return err
-	}
-	fmt.Print("Done\n")
 
-	fmt.Printf("Starting instance '%s'... ", instance)
+	p := tea.NewProgram(initSpinnerUI(lxcOpts{
+		instance: instance,
+		backup:   backup,
+		message:  `Importing backup for instance (%s) <- (%s): %s`,
+	}))
+	var wg sync.WaitGroup
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		if err := p.Start(); err != nil {
+			os.Exit(1)
+		}
+	}()
+
+	go func() {
+		if err := cmd.Run(); err != nil {
+			os.Exit(1)
+		}
+		p.Send(true)
+	}()
+
+	wg.Wait()
+
+	defer os.Remove(backup)
+
+	fmt.Printf("Starting imported instance (%s): ", instance)
 	cmd = exec.Command("lxc", "start", instance)
 	cmd.Stdout = ioutil.Discard
 	if err := cmd.Run(); err != nil {
 		return err
 	}
-	fmt.Print("Done\n")
+	fmt.Print("success\n")
 	return nil
 }

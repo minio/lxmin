@@ -27,8 +27,10 @@ import (
 	"os/exec"
 	"path"
 	"strings"
+	"sync"
 	"time"
 
+	tea "github.com/charmbracelet/bubbletea"
 	"github.com/cheggaaa/pb/v3"
 	"github.com/minio/cli"
 	"github.com/minio/minio-go/v7"
@@ -66,6 +68,8 @@ EXAMPLES:
      {{.Prompt}} {{.HelpName}} u2 --optimized
   2. Backup an instance 'u2', add custom tags of 'k1=v1&k2=v2' form:
      {{.Prompt}} {{.HelpName}} u2 --optimized --tags "category=prod&project=backup"
+  3. Backup a remote instance 'u3' on remote 'mylxdserver':
+     {{.Prompt}} {{.HelpName}} mylxdserver:u3 --optimized
 `,
 }
 
@@ -92,11 +96,29 @@ func backupMain(c *cli.Context) error {
 		cmd = exec.Command("lxc", "export", "--optimized-storage", instance, backup)
 	}
 	cmd.Stdout = ioutil.Discard
-	fmt.Printf("Exporting backup from lxc '%s'... ", backup)
-	if err := cmd.Run(); err != nil {
-		return err
-	}
-	fmt.Println("Done")
+
+	p := tea.NewProgram(initSpinnerUI(lxcOpts{
+		instance: instance,
+		backup:   backup,
+		message:  `Exporting backup for instance (%s) -> (%s): %s`,
+	}))
+	var wg sync.WaitGroup
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		if err := p.Start(); err != nil {
+			os.Exit(1)
+		}
+	}()
+
+	go func() {
+		if err := cmd.Run(); err != nil {
+			os.Exit(1)
+		}
+		p.Send(true)
+	}()
+
+	wg.Wait()
 
 	f, err := os.Open(backup)
 	if err != nil {

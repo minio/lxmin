@@ -58,6 +58,10 @@ func deleteMain(c *cli.Context) error {
 	}
 
 	instance := strings.TrimSpace(c.Args().Get(0))
+	if instance == "" {
+		return errors.New("instance name is not optional")
+	}
+
 	backup := strings.TrimSpace(c.Args().Get(1))
 	deleteAll := c.Bool("all") && c.Bool("force")
 	if backup == "" && !deleteAll {
