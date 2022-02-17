@@ -32,6 +32,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/cheggaaa/pb/v3"
+	"github.com/dustin/go-humanize"
 	"github.com/minio/cli"
 	"github.com/minio/minio-go/v7"
 	"github.com/minio/minio-go/v7/pkg/tags"
@@ -45,6 +46,11 @@ var backupFlags = []cli.Flag{
 	cli.StringFlag{
 		Name:  "tags",
 		Usage: "add additional tags for the backup",
+	},
+	cli.Int64Flag{
+		Name:  "part-size",
+		Value: 64 * humanize.MiByte,
+		Usage: "configure upload part size per transfer",
 	},
 }
 
@@ -76,6 +82,11 @@ EXAMPLES:
 func backupMain(c *cli.Context) error {
 	if len(c.Args()) > 1 {
 		cli.ShowAppHelpAndExit(c, 1) // last argument is exit code
+	}
+
+	partSize := c.Int64("part-size")
+	if partSize == 0 {
+		partSize = 64 * humanize.MiByte
 	}
 
 	tagsHdr := c.String("tags")
@@ -140,6 +151,7 @@ func backupMain(c *cli.Context) error {
 	barReader := progress.NewProxyReader(f)
 	_, err = globalS3Clnt.PutObject(context.Background(), globalBucket, path.Join(instance, backup), barReader, fi.Size(), minio.PutObjectOptions{
 		UserTags:     tagsSet.ToMap(),
+		PartSize:     uint64(partSize),
 		UserMetadata: usermetadata,
 		ContentType:  mime.TypeByExtension(".tar.gz"),
 	})
