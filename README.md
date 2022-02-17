@@ -57,8 +57,8 @@ GLOBAL FLAGS:
 
 ```sh
 lxmin backup u2
-Exporting backup from lxc backup_2022-02-16-04-1040.tar.gz... Done
-Uploading backup_2022-02-16-04-1040.tar.gz [==========================================================================================================================] 101.25 MiB/s
+Exporting backup for instance (u2) -> (backup_2022-02-17-03-1003.tar.gz): success
+Uploading backup_2022-02-17-03-1003.tar.gz [======================================================================================] 95.70 MiB/s
 ```
 
 ### Create a backup (optimized supported for ZFS and BTRFS storage pools)
@@ -67,8 +67,8 @@ Creating optimized backups when possible is a good practice, allows for faster r
 
 ```sh
 lxmin backup u2 --optimized
-Exporting backup from lxc backup_2022-02-16-04-1040.tar.gz... Done
-Uploading backup_2022-02-16-04-1040.tar.gz [==========================================================================================================================] 101.25 MiB/s
+Exporting backup for instance (u2) -> (backup_2022-02-17-03-1003.tar.gz): success
+Uploading backup_2022-02-17-03-1003.tar.gz [======================================================================================] 95.70 MiB/s
 ```
 
 ### List all backups
@@ -78,19 +78,18 @@ lxmin list
 ┌──────────┐┌──────────────────────────────────┐┌───────────────────────────────┐┌─────────┐┌───────────┐
 │ Instance ││ Name                             ││ Created                       ││ Size    ││ Optimized │
 │          ││                                  ││                               ││         ││           │
-│ u2       ││ backup_2022-02-16-05-0102.tar.gz ││ Wed, 16 Feb 2022 05:01:56 GMT ││ 666 MiB ││ ✗         │
-│ u2       ││ backup_2022-02-16-22-4725.tar.gz ││ Wed, 16 Feb 2022 22:49:07 GMT ││ 871 MiB ││ ✗         │
-│ u2       ││ backup_2022-02-16-23-4340.tar.gz ││ Wed, 16 Feb 2022 23:44:55 GMT ││ 890 MiB ││ ✔         │
+│ u2       ││ backup_2022-02-17-03-1003.tar.gz ││ Thu, 17 Feb 2022 03:11:19 GMT ││ 889 MiB ││ ✔         │
+│ u2       ││ backup_2022-02-18-03-1003.tar.gz ││ Thu, 17 Feb 2022 03:11:19 GMT ││ 889 MiB ││ ✔         │
 └──────────┘└──────────────────────────────────┘└───────────────────────────────┘└─────────┘└───────────┘
 ```
 
 ### Restore a backup
 
 ```sh
-lxmin restore u2 backup_2022-02-16-04-1040.tar.gz
-Downloading backup_2022-02-16-04-1040.tar.gz [========================================================================================================================] 212.41 MiB/s
-Importing instance 'u2', from 'backup_2022-02-16-04-1040.tar.gz'... Done
-Starting instance 'u2'... Done
+lxmin restore u2 backup_2022-02-17-03-1003.tar.gz
+Downloading backup_2022-02-17-03-1003.tar.gz [======================================================================================================================] 209.10 MiB/s
+Importing backup for instance (u2) <- (backup_2022-02-17-03-1003.tar.gz): success
+Starting imported instance (u2): success
 ```
 
 ### Pretty print any tags on a backup
@@ -115,7 +114,7 @@ lxmin delete u2 backup_2022-02-16-04-1040.tar.gz
 Backup backup_2022-02-16-04-1040.tar.gz deleted successfully
 ```
 
-Delete all backups
+Delete all backups (dangerous operation)
 
 ```sh
 lxmin delete u2 --all --force
