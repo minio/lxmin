@@ -2,29 +2,6 @@
 
 Backup and restore LXC instances from MinIO
 
-## Usage
-
-```sh
-NAME:
-  lxmin - backup and restore LXC instances from MinIO
-
-USAGE:
-  lxmin [FLAGS] COMMAND [COMMAND FLAGS | -h] [ARGUMENTS...]
-
-COMMANDS:
-  backup      backup an instance image to MinIO
-  restore     restore an instance image from MinIO
-  list, ls    list all backups from MinIO
-  delete, rm  deletes a specific backup by 'name' for an instance from MinIO
-
-GLOBAL FLAGS:
-  --endpoint value    endpoint for S3 API call(s) [$LXMIN_ENDPOINT]
-  --bucket value      bucket on MinIO to save/restore backup(s) [$LXMIN_BUCKET]
-  --access-key value  access key credential for S3 API [$LXMIN_ACCESS_KEY]
-  --secret-key value  secret key credential for S3 API [$LXMIN_SECRET_KEY]
-  --help, -h          show help
-```
-
 ## Install
 
 ### Binary Releases
@@ -48,6 +25,32 @@ export LXMIN_ENDPOINT=http://localhost:9000
 export LXMIN_BUCKET="backups"
 export LXMIN_ACCESS_KEY="minioadmin"
 export LXMIN_SECRET_KEY="minioadmin"
+```
+
+### Usage
+
+```sh
+lxmin --help
+
+NAME:
+  lxmin - backup and restore LXC instances from MinIO
+
+USAGE:
+  lxmin [FLAGS] COMMAND [COMMAND FLAGS | -h] [ARGUMENTS...]
+
+COMMANDS:
+  backup      backup an instance image to MinIO
+  restore     restore an instance image from MinIO
+  info        pretty print tags on an instance image on MinIO
+  list, ls    list all backups from MinIO
+  delete, rm  deletes a specific backup by 'name' for an instance from MinIO
+
+GLOBAL FLAGS:
+  --endpoint value    endpoint for S3 API call(s) [$LXMIN_ENDPOINT]
+  --bucket value      bucket on MinIO to save/restore backup(s) [$LXMIN_BUCKET]
+  --access-key value  access key credential for S3 API [$LXMIN_ACCESS_KEY]
+  --secret-key value  secret key credential for S3 API [$LXMIN_SECRET_KEY]
+  --help, -h          show help
 ```
 
 ### Create a backup
