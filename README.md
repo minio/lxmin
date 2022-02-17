@@ -25,6 +25,20 @@ GLOBAL FLAGS:
   --help, -h          show help
 ```
 
+## Install
+
+### Binary Releases
+
+| OS       | ARCH    | Binary                                                                                       |
+|:--------:|:-------:|:--------------------------------------------------------------------------------------------:|
+| Linux    | amd64   | [linux-amd64](https://github.com/minio/lxmin/releases/latest/download/lxmin-linux-amd64)         |
+| Linux    | arm64   | [linux-arm64](https://github.com/minio/lxmin/releases/latest/download/lxmin-linux-arm64)         |
+| Linux    | ppc64le | [linux-ppc64le](https://github.com/minio/lxmin/releases/latest/download/lxmin-linux-ppc64le)     |
+| Linux    | s390x   | [linux-s390x](https://github.com/minio/lxmin/releases/latest/download/lxmin-linux-s390x)         |
+| Apple M1 | arm64   | [darwin-arm64](https://github.com/minio/lxmin/releases/latest/download/lxmin-darwin-arm64)       |
+| Apple    | amd64   | [darwin-amd64](https://github.com/minio/lxmin/releases/latest/download/lxmin-darwin-amd64)       |
+| Windows  | amd64   | [windows-amd64](https://github.com/minio/lxmin/releases/latest/download/lxmin-windows-amd64.exe) |
+
 ### Setup
 
 Enable MinIO endpoint, bucket and access credentials.
