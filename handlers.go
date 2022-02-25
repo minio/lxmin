@@ -103,7 +103,7 @@ func (e *errorResponse) Render(w http.ResponseWriter) {
 }
 
 type successResponse struct {
-	Metadata interface{}  `json:"metadata"`
+	Metadata interface{}  `json:"metadata,omitempty"`
 	Status   string       `json:"status"`
 	Code     int          `json:"status_code"`
 	Type     ResponseType `json:"type"`
@@ -130,6 +130,42 @@ type backupInfo struct {
 	Optimized  bool              `json:"optimized"`
 	Compressed bool              `json:"compressed"`
 	Tags       map[string]string `json:"tags,omitempty"`
+}
+
+func deleteHandler(w http.ResponseWriter, r *http.Request) {
+	vars := mux.Vars(r)
+	instance := vars["name"]
+	backup := vars["backup"]
+
+	if instance == "" {
+		writeErrorResponse(w, errors.New("instance name cannot be empty"))
+		return
+	}
+
+	if backup == "" {
+		writeErrorResponse(w, errors.New("backup name cannot be empty"))
+		return
+	}
+
+	prefix := path.Join(path.Clean(instance), backup)
+
+	opts := minio.RemoveObjectOptions{}
+	for obj := range globalS3Clnt.ListObjects(context.Background(), globalBucket, minio.ListObjectsOptions{
+		Prefix:       prefix,
+		WithVersions: true,
+	}) {
+		if obj.Err != nil {
+			writeErrorResponse(w, obj.Err)
+			return
+		}
+		opts.VersionID = obj.VersionID
+		if err := globalS3Clnt.RemoveObject(context.Background(), globalBucket, obj.Key, opts); err != nil {
+			writeErrorResponse(w, err)
+			return
+		}
+	}
+
+	writeSuccessResponse(w, nil, true)
 }
 
 func infoHandler(w http.ResponseWriter, r *http.Request) {
