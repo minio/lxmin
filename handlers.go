@@ -30,43 +30,97 @@ import (
 	"github.com/minio/minio-go/v7"
 )
 
+// ResponseType represents a valid LXD response type
+type ResponseType string
+
+// LXD response types
+const (
+	SyncResponse  ResponseType = "sync"
+	AsyncResponse ResponseType = "async"
+	ErrorResponse ResponseType = "error"
+)
+
+// Response represents an API response
+type Response interface {
+	Render(w http.ResponseWriter) error
+	String() string
+}
+
 func writeErrorResponse(w http.ResponseWriter, err error) {
 	w.WriteHeader(http.StatusBadRequest)
 	errResp := errorResponse{
 		Code:  http.StatusBadRequest,
 		Error: fmt.Sprintf("%v", err),
-		Type:  "error",
+		Type:  ErrorResponse,
 	}
 	json.NewEncoder(w).Encode(&errResp)
 }
 
 func writeSuccessResponse(w http.ResponseWriter, data interface{}, sync bool) {
-	w.WriteHeader(http.StatusOK)
-	successResp := successResponse{
-		Metadata:   data,
-		Status:     "Success",
-		StatusCode: http.StatusOK,
-		Type: func() string {
+	sresp := &successResponse{
+		Code:     http.StatusOK,
+		Metadata: data,
+		Type: func() ResponseType {
 			if sync {
-				return "sync"
+				return SyncResponse
 			}
-			return "async"
+			return AsyncResponse
 		}(),
 	}
-	json.NewEncoder(w).Encode(&successResp)
+	sresp.Render(w)
+}
+
+// NotFound returns a not found response (404) with the given error.
+func NotFound(err error) *errorResponse {
+	message := "not found"
+	if err != nil {
+		message = err.Error()
+	}
+
+	return &errorResponse{
+		Code:  http.StatusNotFound,
+		Error: message,
+		Type:  ErrorResponse,
+	}
 }
 
 type errorResponse struct {
-	Code  int    `json:"code"`
-	Error string `json:"error"`
-	Type  string `json:"type"`
+	Code  int          `json:"code"`
+	Error string       `json:"error"`
+	Type  ResponseType `json:"type"`
+}
+
+func (e *errorResponse) Render(w http.ResponseWriter) {
+	if e == nil {
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("X-Content-Type-Options", "nosniff")
+
+	w.WriteHeader(e.Code)
+	json.NewEncoder(w).Encode(e)
 }
 
 type successResponse struct {
-	Metadata   interface{} `json:"metadata"`
-	Status     string      `json:"status"`
-	StatusCode int         `json:"status_code"`
-	Type       string      `json:"type"`
+	Metadata interface{}  `json:"metadata"`
+	Status   string       `json:"status"`
+	Code     int          `json:"status_code"`
+	Type     ResponseType `json:"type"`
+}
+
+func (s *successResponse) Render(w http.ResponseWriter) {
+	if s == nil {
+		return
+	}
+
+	s.Status = "Success"
+
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("X-Content-Type-Options", "nosniff")
+
+	w.WriteHeader(s.Code)
+	json.NewEncoder(w).Encode(s)
 }
 
 type backupInfo struct {
@@ -107,9 +161,9 @@ func infoHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_, ok := obj.UserMetadata["X-Amz-Meta-Optimized"]
+	_, ok := obj.UserMetadata["Optimized"]
 	optimized := ok
-	_, ok = obj.UserMetadata["X-Amz-Meta-Compressed"]
+	_, ok = obj.UserMetadata["Compressed"]
 	compressed := ok
 
 	info := backupInfo{
@@ -125,8 +179,6 @@ func infoHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func listHandler(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "application/json")
-
 	vars := mux.Vars(r)
 	instance := vars["name"]
 

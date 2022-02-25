@@ -5,7 +5,7 @@ The spirit of this this API is to be close to LXD REST API documentation, authen
 | Method | API                                    | Desc                                                                                                                     |
 |:-------|:---------------------------------------|:-------------------------------------------------------------------------------------------------------------------------|
 | GET    | /1.0/instances/{name}/backups          | Get the backups (Returns a list of instance backups on MinIO, along with some addtional metadata)                        |
-| HEAD   | /1.0/instances/{name}/backups/{backup} | Get backup specific metadata and information                                                                             |
+| GET    | /1.0/instances/{name}/backups/{backup} | Get backup specific metadata and information                                                                             |
 | POST   | /1.0/instances/{name}/backups          | Create a backup to MinIO (Optionally you can add x-amz-tagging: "key=value" format to add additional tags on the backup) |
 | DELETE | /1.0/instances/{name}/backups/{backup} | Delete a backup from MinIO                                                                                               |
 | POST   | /1.0/instances/{name}/backups/{backup} | Restore a backup from MinIO                                                                                              |

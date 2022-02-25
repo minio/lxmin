@@ -39,11 +39,6 @@ var deleteFlags = []cli.Flag{
 	},
 }
 
-var (
-	globalS3Clnt *minio.Client
-	globalBucket string
-)
-
 var deleteCmd = cli.Command{
 	Name:    "delete",
 	Aliases: []string{"rm"},

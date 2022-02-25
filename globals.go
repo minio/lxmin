@@ -18,11 +18,21 @@
 package main
 
 import (
+	"context"
+	"crypto/x509"
 	"net/url"
 
 	"github.com/minio/cli"
 	"github.com/minio/minio-go/v7"
 	"github.com/minio/minio-go/v7/pkg/credentials"
+	"github.com/minio/pkg/certs"
+)
+
+var (
+	globalS3Clnt   *minio.Client
+	globalBucket   string
+	globalTLSCerts *certs.Manager
+	globalRootCAs  *x509.CertPool
 )
 
 // Set global states. NOTE: It is deliberately kept monolithic to ensure we dont miss out any flags.
@@ -42,5 +52,24 @@ func setGlobalsFromContext(c *cli.Context) error {
 
 	globalS3Clnt = s3Client
 	globalBucket = c.String("bucket")
+	globalTLSCerts, err = certs.NewManager(context.Background(), c.String("cert"), c.String("key"), loadX509KeyPair)
+	if err != nil {
+		return err
+	}
+
+	publicCerts, err := parsePublicCertFile(c.String("cert"))
+	if err != nil {
+		return err
+	}
+
+	globalRootCAs, err = certs.GetRootCAs(c.String("capath"))
+	if err != nil {
+		return err
+	}
+
+	for _, cert := range publicCerts {
+		globalRootCAs.AddCert(cert)
+	}
+
 	return nil
 }

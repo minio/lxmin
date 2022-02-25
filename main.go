@@ -19,7 +19,11 @@ package main
 
 import (
 	"context"
+	"crypto/tls"
+	"crypto/x509"
+	"errors"
 	"log"
+	"net"
 	"net/http"
 	"os"
 	"os/exec"
@@ -59,7 +63,22 @@ var globalFlags = []cli.Flag{
 	cli.StringFlag{
 		Name:   "address",
 		EnvVar: "LXMIN_ADDRESS",
-		Usage:  "run as HTTPs REST API service",
+		Usage:  "enable TLS REST API service",
+	},
+	cli.StringFlag{
+		Name:   "cert",
+		EnvVar: "LXMIN_TLS_CERT",
+		Usage:  "TLS server certificate",
+	},
+	cli.StringFlag{
+		Name:   "key",
+		EnvVar: "LXMIN_TLS_KEY",
+		Usage:  "TLS server private key",
+	},
+	cli.StringFlag{
+		Name:   "capath",
+		EnvVar: "LXMIN_TLS_CAPATH",
+		Usage:  "TLS trust certs for incoming clients",
 	},
 }
 
@@ -91,9 +110,63 @@ var appCmds = []cli.Command{
 	deleteCmd,
 }
 
+func authenticateTLSClientHandler(h http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.TLS == nil {
+			writeErrorResponse(w, errors.New("no tls connection"))
+			return
+		}
+
+		// A client may send a certificate chain such that we end up
+		// with multiple peer certificates. However, we can only accept
+		// a single client certificate. Otherwise, the certificate to
+		// policy mapping would be ambigious.
+		// However, we can filter all CA certificates and only check
+		// whether they client has sent exactly one (non-CA) leaf certificate.
+		peerCertificates := make([]*x509.Certificate, 0, len(r.TLS.PeerCertificates))
+		for _, cert := range r.TLS.PeerCertificates {
+			if cert.IsCA {
+				continue
+			}
+			peerCertificates = append(peerCertificates, cert)
+		}
+		r.TLS.PeerCertificates = peerCertificates
+
+		// Now, we have to check that the client has provided exactly one leaf
+		// certificate that we can map to a policy.
+		if len(r.TLS.PeerCertificates) == 0 {
+			writeErrorResponse(w, errors.New("no client certificate provided"))
+			return
+		}
+
+		if len(r.TLS.PeerCertificates) > 1 {
+			writeErrorResponse(w, errors.New("more than one client certificate provided"))
+			return
+		}
+
+		certificate := r.TLS.PeerCertificates[0]
+		_, err := certificate.Verify(x509.VerifyOptions{
+			KeyUsages: []x509.ExtKeyUsage{
+				x509.ExtKeyUsageClientAuth,
+			},
+			Roots: globalRootCAs,
+		})
+		if err != nil {
+			writeErrorResponse(w, err)
+			return
+		}
+
+		h.ServeHTTP(w, r)
+	})
+}
+
 func mainHTTP(c *cli.Context) error {
-	if !c.IsSet("address") {
+	if c.Args().Present() {
+		// With args present no need to start lxmin service.
 		return nil
+	}
+	if !c.IsSet("address") {
+		return errors.New("address cannot be empty please use '--address=:8000' to start lxmin as service")
 	}
 
 	if err := setGlobalsFromContext(c); err != nil {
@@ -101,10 +174,13 @@ func mainHTTP(c *cli.Context) error {
 	}
 
 	r := mux.NewRouter()
+	r.StrictSlash(false)
+	r.SkipClean(true)
+
 	r.HandleFunc("/1.0/instances/{name}/backups", listHandler).
 		Methods(http.MethodGet)
 	r.HandleFunc("/1.0/instances/{name}/backups/{backup}", infoHandler).
-		Methods(http.MethodHead)
+		Methods(http.MethodGet)
 	// r.HandleFunc("/1.0/instances/{name}/backups", backupHandler).
 	// 	Methods(http.MethodPost)
 	// r.HandleFunc("/1.0/instances/{name}/backups/{backup}", deleteHandler).
@@ -112,16 +188,39 @@ func mainHTTP(c *cli.Context) error {
 	// r.HandleFunc("/1.0/instances/{name}/backups/{backup}", restoreHandler).
 	// 	Methods(http.MethodPost)
 	r.HandleFunc("/1.0/health", healthHandler)
+	r.Use(authenticateTLSClientHandler)
+
+	tlsConfig := &tls.Config{
+		PreferServerCipherSuites: true,
+		MinVersion:               tls.VersionTLS12,
+		NextProtos:               []string{"http/1.1", "h2"},
+		GetCertificate:           globalTLSCerts.GetCertificate,
+		ClientAuth:               tls.RequestClientCert,
+	}
+
+	r.NotFoundHandler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		NotFound(nil).Render(w)
+	})
 
 	srv := &http.Server{
 		Handler:     r,
 		Addr:        c.String("address"),
+		TLSConfig:   tlsConfig,
 		IdleTimeout: time.Second * 60,
 	}
 
 	// Run our server in a goroutine so that it doesn't block.
 	go func() {
-		if err := srv.ListenAndServe(); err != nil {
+		log.Println("Server listening on", srv.Addr)
+
+		ln, err := net.Listen("tcp", srv.Addr)
+		if err != nil {
+			log.Fatalln(err)
+		}
+
+		defer ln.Close()
+
+		if err := srv.Serve(tls.NewListener(ln, tlsConfig)); err != nil && err != http.ErrServerClosed {
 			log.Fatalln(err)
 		}
 	}()
@@ -158,15 +257,15 @@ func main() {
 	app.Flags = globalFlags
 	app.Commands = appCmds
 	app.Before = func(c *cli.Context) error {
-		if !c.Args().Present() {
-			cli.ShowAppHelpAndExit(c, 1) // last argument is exit code
-		}
 		if c.Bool("help") {
 			cli.ShowAppHelpAndExit(c, 0) // last argument is exit code
 		}
 		_, err := exec.LookPath("lxc")
 		return err
 	}
+
+	// Start http service if configured.
+	app.Action = mainHTTP
 
 	if err := app.Run(os.Args); err != nil {
 		log.Fatalln(err)
