@@ -8,6 +8,7 @@ require (
 	github.com/charmbracelet/lipgloss v0.5.0
 	github.com/cheggaaa/pb/v3 v3.0.8
 	github.com/dustin/go-humanize v1.0.0
+	github.com/gorilla/mux v1.8.0
 	github.com/minio/cli v1.22.0
 	github.com/minio/minio-go/v7 v7.0.21
 )

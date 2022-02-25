@@ -18,10 +18,15 @@
 package main
 
 import (
+	"context"
 	"log"
+	"net/http"
 	"os"
 	"os/exec"
+	"os/signal"
+	"time"
 
+	"github.com/gorilla/mux"
 	"github.com/minio/cli"
 )
 
@@ -51,6 +56,11 @@ var globalFlags = []cli.Flag{
 		EnvVar: "LXMIN_SECRET_KEY",
 		Usage:  "secret key credential",
 	},
+	cli.StringFlag{
+		Name:   "address",
+		EnvVar: "LXMIN_ADDRESS",
+		Usage:  "run as HTTPs REST API service",
+	},
 }
 
 var helpTemplate = `NAME:
@@ -70,6 +80,7 @@ ENVIRONMENT VARIABLES:
   LXMIN_BUCKET        bucket to save/restore backup(s)
   LXMIN_ACCESS_KEY    access key credential
   LXMIN_SECRET_KEY    secret key credential
+  LXMIN_ADDRESS       run as HTTPs REST API service
 `
 
 var appCmds = []cli.Command{
@@ -78,6 +89,63 @@ var appCmds = []cli.Command{
 	infoCmd,
 	listCmd,
 	deleteCmd,
+}
+
+func mainHTTP(c *cli.Context) error {
+	if !c.IsSet("address") {
+		return nil
+	}
+
+	if err := setGlobalsFromContext(c); err != nil {
+		return err
+	}
+
+	r := mux.NewRouter()
+	r.HandleFunc("/1.0/instances/{name}/backups", listHandler).
+		Methods(http.MethodGet)
+	r.HandleFunc("/1.0/instances/{name}/backups/{backup}", infoHandler).
+		Methods(http.MethodHead)
+	// r.HandleFunc("/1.0/instances/{name}/backups", backupHandler).
+	// 	Methods(http.MethodPost)
+	// r.HandleFunc("/1.0/instances/{name}/backups/{backup}", deleteHandler).
+	// 	Methods(http.MethodDelete)
+	// r.HandleFunc("/1.0/instances/{name}/backups/{backup}", restoreHandler).
+	// 	Methods(http.MethodPost)
+	r.HandleFunc("/1.0/health", healthHandler)
+
+	srv := &http.Server{
+		Handler:     r,
+		Addr:        c.String("address"),
+		IdleTimeout: time.Second * 60,
+	}
+
+	// Run our server in a goroutine so that it doesn't block.
+	go func() {
+		if err := srv.ListenAndServe(); err != nil {
+			log.Fatalln(err)
+		}
+	}()
+
+	ch := make(chan os.Signal, 1)
+	// We'll accept graceful shutdowns when quit via SIGINT (Ctrl+C)
+	// SIGKILL, SIGQUIT or SIGTERM (Ctrl+/) will not be caught.
+	signal.Notify(ch, os.Interrupt)
+
+	// Block until we receive our signal.
+	<-ch
+
+	// Create a deadline to wait for.
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+
+	// Doesn't block if no connections, but will otherwise wait
+	// until the timeout deadline.
+	srv.Shutdown(ctx)
+
+	// Optionally, you could run srv.Shutdown in a goroutine and block on
+	// <-ctx.Done() if your application should wait for other services
+	// to finalize based on context cancellation.
+	return nil
 }
 
 func main() {
@@ -101,6 +169,6 @@ func main() {
 	}
 
 	if err := app.Run(os.Args); err != nil {
-		log.Fatal(err)
+		log.Fatalln(err)
 	}
 }
