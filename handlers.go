@@ -199,6 +199,8 @@ func performRestore(instance, backup string, r *http.Request) error {
 		return err
 	}
 
+	os.Remove(backup) // remove any existing file.
+
 	w, err := os.Create(backup)
 	if err != nil {
 		obj.Close()
