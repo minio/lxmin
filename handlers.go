@@ -213,12 +213,14 @@ func performRestore(instance, backup string, r *http.Request) error {
 	cmd.Stdout = ioutil.Discard
 
 	if err := cmd.Run(); err != nil {
+		os.Remove(backup)
 		return err
 	}
 
 	cmd = exec.Command("lxc", "start", instance)
 	cmd.Stdout = ioutil.Discard
 	if err := cmd.Run(); err != nil {
+		os.Remove(backup)
 		return err
 	}
 
