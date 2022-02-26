@@ -59,11 +59,15 @@ Response example:
 ```
 {
   "metadata": {
-    "name": "backup_2022-02-26-07-3921.tar.gz",
-    "created": "2022-02-26T07:41:07Z",
-    "size": 1303072030,
+    "name": "backup_2022-02-26-08-2027.tar.gz",
+    "created": "2022-02-26T08:22:12Z",
+    "size": 1302974262,
     "optimized": true,
-    "compressed": true
+    "compressed": true,
+    "tags": {
+      "os": "Ubuntu",
+      "version": "20.04"
+    }
   },
   "status": "Success",
   "status_code": 200,
