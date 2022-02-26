@@ -182,10 +182,6 @@ func performBackup(instance, backup string, tagsMap map[string]string, partSize 
 }
 
 func performRestore(instance, backup string, r *http.Request) error {
-	if err := checkInstance(instance); err != nil {
-		return err
-	}
-
 	opts := minio.GetObjectOptions{}
 	obj, err := globalS3Clnt.GetObject(context.Background(), globalBucket, path.Join(instance, backup), opts)
 	if err != nil {
@@ -228,6 +224,11 @@ func restoreHandler(w http.ResponseWriter, r *http.Request) {
 
 	if backup == "" {
 		writeErrorResponse(w, errors.New("backup name cannot be empty"))
+		return
+	}
+
+	if err := checkInstance(instance); err != nil {
+		writeErrorResponse(w, err)
 		return
 	}
 
