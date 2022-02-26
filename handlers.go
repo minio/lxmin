@@ -135,7 +135,7 @@ func (s *successResponse) Render(w http.ResponseWriter) {
 type backupInfo struct {
 	Name       string            `json:"name"`
 	Created    time.Time         `json:"created,omitempty"`
-	Size       int64             `json:"size"`
+	Size       int64             `json:"size,omitempty"`
 	Optimized  bool              `json:"optimized"`
 	Compressed bool              `json:"compressed"`
 	Tags       map[string]string `json:"tags,omitempty"`
@@ -285,7 +285,14 @@ func backupHandler(w http.ResponseWriter, r *http.Request) {
 		}
 	}()
 
+	optimized := r.Form.Get("optimize") == "true"
+
 	sresp := &successResponse{
+		Metadata: backupInfo{
+			Name:       backup,
+			Optimized:  optimized,
+			Compressed: true,
+		},
 		Status: "Operation created",
 		Code:   100,
 		Type:   AsyncResponse,
