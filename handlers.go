@@ -132,9 +132,20 @@ func (s *successResponse) Render(w http.ResponseWriter) {
 	json.NewEncoder(w).Encode(s)
 }
 
+type bkTime struct {
+	time.Time
+}
+
+func (t bkTime) MarshalJSON() ([]byte, error) {
+	if t.IsZero() {
+		return nil, nil
+	}
+	return json.Marshal(time.Time(t.Time))
+}
+
 type backupInfo struct {
 	Name       string            `json:"name"`
-	Created    time.Time         `json:"created,omitempty"`
+	Created    bkTime            `json:"created,omitempty"`
 	Size       int64             `json:"size,omitempty"`
 	Optimized  bool              `json:"optimized"`
 	Compressed bool              `json:"compressed"`
@@ -376,7 +387,7 @@ func infoHandler(w http.ResponseWriter, r *http.Request) {
 
 	info := backupInfo{
 		Name:       backup,
-		Created:    obj.LastModified,
+		Created:    bkTime{obj.LastModified},
 		Size:       obj.Size,
 		Optimized:  optimized,
 		Compressed: compressed,
@@ -411,7 +422,7 @@ func listHandler(w http.ResponseWriter, r *http.Request) {
 		compressed := ok
 		backups = append(backups, backupInfo{
 			Name:       path.Base(obj.Key),
-			Created:    obj.LastModified,
+			Created:    bkTime{obj.LastModified},
 			Size:       obj.Size,
 			Optimized:  optimized,
 			Compressed: compressed,
