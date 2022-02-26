@@ -145,13 +145,17 @@ func authenticateTLSClientHandler(h http.Handler) http.Handler {
 		}
 
 		certificate := r.TLS.PeerCertificates[0]
-		_, err := certificate.Verify(x509.VerifyOptions{
+		if _, err := certificate.Verify(x509.VerifyOptions{
 			KeyUsages: []x509.ExtKeyUsage{
 				x509.ExtKeyUsageClientAuth,
 			},
 			Roots: globalRootCAs,
-		})
-		if err != nil {
+		}); err != nil {
+			writeErrorResponse(w, err)
+			return
+		}
+
+		if err := r.ParseForm(); err != nil {
 			writeErrorResponse(w, err)
 			return
 		}
@@ -181,12 +185,12 @@ func mainHTTP(c *cli.Context) error {
 		Methods(http.MethodGet)
 	r.HandleFunc("/1.0/instances/{name}/backups/{backup}", infoHandler).
 		Methods(http.MethodGet)
-	// r.HandleFunc("/1.0/instances/{name}/backups", backupHandler).
-	// 	Methods(http.MethodPost)
+	r.HandleFunc("/1.0/instances/{name}/backups", backupHandler).
+		Methods(http.MethodPost)
 	r.HandleFunc("/1.0/instances/{name}/backups/{backup}", deleteHandler).
 		Methods(http.MethodDelete)
-	// r.HandleFunc("/1.0/instances/{name}/backups/{backup}", restoreHandler).
-	// 	Methods(http.MethodPost)
+	r.HandleFunc("/1.0/instances/{name}/backups/{backup}", restoreHandler).
+		Methods(http.MethodPost)
 	r.HandleFunc("/1.0/health", healthHandler)
 	r.Use(authenticateTLSClientHandler)
 

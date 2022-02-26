@@ -22,12 +22,21 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
+	"io/ioutil"
+	"log"
+	"mime"
 	"net/http"
+	"os"
+	"os/exec"
 	"path"
+	"strconv"
 	"time"
 
+	"github.com/dustin/go-humanize"
 	"github.com/gorilla/mux"
 	"github.com/minio/minio-go/v7"
+	"github.com/minio/minio-go/v7/pkg/tags"
 )
 
 // ResponseType represents a valid LXD response type
@@ -125,11 +134,166 @@ func (s *successResponse) Render(w http.ResponseWriter) {
 
 type backupInfo struct {
 	Name       string            `json:"name"`
-	Created    time.Time         `json:"created"`
+	Created    time.Time         `json:"created,omitempty"`
 	Size       int64             `json:"size"`
 	Optimized  bool              `json:"optimized"`
 	Compressed bool              `json:"compressed"`
 	Tags       map[string]string `json:"tags,omitempty"`
+}
+
+func performBackup(instance, backup string, tagsMap map[string]string, partSize int64, r *http.Request) error {
+	cmd := exec.Command("lxc", "export", instance, backup)
+	optimized := r.Form.Get("optimize") == "true"
+	if optimized {
+		cmd = exec.Command("lxc", "export", "--optimized-storage", instance, backup)
+	}
+	cmd.Stdout = ioutil.Discard
+
+	if err := cmd.Run(); err != nil {
+		return err
+	}
+
+	f, err := os.Open(backup)
+	if err != nil {
+		return err
+	}
+
+	defer os.Remove(backup)
+
+	fi, err := f.Stat()
+	if err != nil {
+		return err
+	}
+
+	usermetadata := map[string]string{}
+	// Save additional information if the backup is optimized or not.
+	usermetadata["optimized"] = strconv.FormatBool(optimized)
+	usermetadata["compressed"] = "true" // This is always true.
+
+	opts := minio.PutObjectOptions{
+		UserTags:     tagsMap,
+		PartSize:     uint64(partSize),
+		UserMetadata: usermetadata,
+		ContentType:  mime.TypeByExtension(".tar.gz"),
+	}
+	_, err = globalS3Clnt.PutObject(context.Background(), globalBucket, path.Join(instance, backup), f, fi.Size(), opts)
+	f.Close()
+	return err
+}
+
+func performRestore(instance, backup string, r *http.Request) error {
+	if err := checkInstance(instance); err != nil {
+		return err
+	}
+
+	opts := minio.GetObjectOptions{}
+	obj, err := globalS3Clnt.GetObject(context.Background(), globalBucket, path.Join(instance, backup), opts)
+	if err != nil {
+		return err
+	}
+
+	w, err := os.Create(backup)
+	if err != nil {
+		obj.Close()
+		return err
+	}
+	io.Copy(w, obj)
+	obj.Close()
+
+	cmd := exec.Command("lxc", "import", backup)
+	cmd.Stdout = ioutil.Discard
+
+	if err := cmd.Run(); err != nil {
+		return err
+	}
+
+	cmd = exec.Command("lxc", "start", instance)
+	cmd.Stdout = ioutil.Discard
+	if err := cmd.Run(); err != nil {
+		return err
+	}
+
+	return os.Remove(backup)
+}
+
+func restoreHandler(w http.ResponseWriter, r *http.Request) {
+	vars := mux.Vars(r)
+	instance := vars["name"]
+	backup := vars["backup"]
+
+	if instance == "" {
+		writeErrorResponse(w, errors.New("instance name cannot be empty"))
+		return
+	}
+
+	if backup == "" {
+		writeErrorResponse(w, errors.New("backup name cannot be empty"))
+		return
+	}
+
+	go func() {
+		rerr := performRestore(instance, backup, r)
+		if rerr != nil {
+			log.Println(rerr)
+		}
+	}()
+
+	sresp := &successResponse{
+		Status: "Operation created",
+		Code:   100,
+		Type:   AsyncResponse,
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("X-Content-Type-Options", "nosniff")
+
+	json.NewEncoder(w).Encode(sresp)
+
+}
+
+func backupHandler(w http.ResponseWriter, r *http.Request) {
+	vars := mux.Vars(r)
+	instance := vars["name"]
+
+	if instance == "" {
+		writeErrorResponse(w, errors.New("instance name cannot be empty"))
+		return
+	}
+
+	partSize, err := strconv.ParseInt(r.Form.Get("partSize"), 10, 64)
+	if err != nil && r.Form.Get("partSize") != "" {
+		writeErrorResponse(w, err)
+		return
+	}
+	if partSize == 0 {
+		partSize = 64 * humanize.MiByte
+	}
+
+	tagsHdr := r.Header.Get("x-amz-tagging")
+	tagsSet, err := tags.Parse(tagsHdr, true)
+	if err != nil {
+		writeErrorResponse(w, err)
+		return
+	}
+
+	backup := "backup_" + time.Now().Format("2006-01-02-15-0405") + ".tar.gz"
+	go func() {
+		berr := performBackup(instance, backup, tagsSet.ToMap(), partSize, r)
+		if berr != nil {
+			log.Println(berr)
+		}
+	}()
+
+	sresp := &successResponse{
+		Status: "Operation created",
+		Code:   100,
+		Type:   AsyncResponse,
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("X-Content-Type-Options", "nosniff")
+
+	json.NewEncoder(w).Encode(sresp)
 }
 
 func deleteHandler(w http.ResponseWriter, r *http.Request) {

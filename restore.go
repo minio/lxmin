@@ -82,6 +82,7 @@ func restoreMain(c *cli.Context) error {
 
 	oinfo, err := obj.Stat()
 	if err != nil {
+		obj.Close()
 		return err
 	}
 
