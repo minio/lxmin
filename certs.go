@@ -94,8 +94,6 @@ func loadX509KeyPair(certFile, keyFile string) (tls.Certificate, error) {
 	if priv, ok := cert.PrivateKey.(crypto.Signer); ok {
 		if pub, ok := priv.Public().(*ecdsa.PublicKey); ok {
 			switch pub.Params().Name {
-			case "P-384":
-				fallthrough
 			case "P-521":
 				// unfortunately there is no cleaner way to check
 				return tls.Certificate{}, fmt.Errorf("tls: the ECDSA curve '%s' is not supported", pub.Params().Name)
