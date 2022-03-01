@@ -31,6 +31,8 @@ import (
 	"os/exec"
 	"path"
 	"strconv"
+	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/dustin/go-humanize"
@@ -136,9 +138,52 @@ type backupInfo struct {
 	Name       string            `json:"name"`
 	Created    *time.Time        `json:"created,omitempty"`
 	Size       int64             `json:"size,omitempty"`
-	Optimized  bool              `json:"optimized"`
-	Compressed bool              `json:"compressed"`
+	Optimized  *bool             `json:"optimized,omitempty"`
+	Compressed *bool             `json:"compressed,omitempty"`
 	Tags       map[string]string `json:"tags,omitempty"`
+	State      string            `json:"state,omitempty"`
+	Progress   *int64            `json:"progress,omitempty"`
+}
+
+type backupReader struct {
+	Started  bool
+	Size     int64
+	Progress int64
+}
+
+func (bk *backupReader) Read(b []byte) (int, error) {
+	atomic.AddInt64(&bk.Progress, int64(len(b)))
+	return len(b), nil
+}
+
+type backupState struct {
+	sync.RWMutex
+	backups map[string]*backupReader
+}
+
+func (s *backupState) Store(bname string, rk *backupReader) {
+	s.Lock()
+	defer s.Unlock()
+
+	s.backups[bname] = rk
+}
+
+func (s *backupState) Pop(bname string) {
+	s.Lock()
+	defer s.Unlock()
+
+	delete(s.backups, bname)
+}
+
+func (s *backupState) Get(bname string) *backupReader {
+	s.RLock()
+	defer s.RUnlock()
+
+	return s.backups[bname]
+}
+
+var globalBackupState = &backupState{
+	backups: map[string]*backupReader{},
 }
 
 func performBackup(instance, backup string, tagsMap map[string]string, partSize int64, r *http.Request) error {
@@ -148,6 +193,10 @@ func performBackup(instance, backup string, tagsMap map[string]string, partSize 
 		cmd = exec.Command("lxc", "export", "--optimized-storage", instance, backup)
 	}
 	cmd.Stdout = ioutil.Discard
+
+	bkReader := &backupReader{Started: true}
+	globalBackupState.Store(backup, bkReader)
+	defer globalBackupState.Pop(backup)
 
 	if err := cmd.Run(); err != nil {
 		return err
@@ -165,6 +214,9 @@ func performBackup(instance, backup string, tagsMap map[string]string, partSize 
 		return err
 	}
 
+	bkReader.Size = fi.Size()
+	globalBackupState.Store(backup, bkReader)
+
 	usermetadata := map[string]string{}
 	// Save additional information if the backup is optimized or not.
 	usermetadata["optimized"] = strconv.FormatBool(optimized)
@@ -175,6 +227,7 @@ func performBackup(instance, backup string, tagsMap map[string]string, partSize 
 		PartSize:     uint64(partSize),
 		UserMetadata: usermetadata,
 		ContentType:  mime.TypeByExtension(".tar.gz"),
+		Progress:     bkReader,
 	}
 	_, err = globalS3Clnt.PutObject(context.Background(), globalBucket, path.Join(instance, backup), f, fi.Size(), opts)
 	f.Close()
@@ -290,12 +343,13 @@ func backupHandler(w http.ResponseWriter, r *http.Request) {
 	}()
 
 	optimized := r.Form.Get("optimize") == "true"
+	compressed := true
 
 	sresp := &successResponse{
 		Metadata: backupInfo{
 			Name:       backup,
-			Optimized:  optimized,
-			Compressed: true,
+			Optimized:  &optimized,
+			Compressed: &compressed,
 		},
 		Status: "Operation created",
 		Code:   100,
@@ -359,6 +413,21 @@ func infoHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if reader := globalBackupState.Get(backup); reader != nil {
+		state := "generating"
+		progress := atomic.LoadInt64(&reader.Progress)
+		if reader.Started && progress > 0 {
+			state = "uploading"
+		}
+		writeSuccessResponse(w, backupInfo{
+			Name:     backup,
+			Size:     reader.Size,
+			State:    state,
+			Progress: &progress,
+		}, true)
+		return
+	}
+
 	opts := minio.GetObjectTaggingOptions{}
 	tags, err := globalS3Clnt.GetObjectTagging(context.Background(), globalBucket, path.Join(instance, backup), opts)
 	if err != nil {
@@ -373,17 +442,15 @@ func infoHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_, ok := obj.UserMetadata["Optimized"]
-	optimized := ok
-	_, ok = obj.UserMetadata["Compressed"]
-	compressed := ok
+	optimized := obj.UserMetadata["Optimized"] == "true"
+	compressed := obj.UserMetadata["Compressed"] == "true"
 
 	info := backupInfo{
 		Name:       backup,
 		Created:    &obj.LastModified,
 		Size:       obj.Size,
-		Optimized:  optimized,
-		Compressed: compressed,
+		Optimized:  &optimized,
+		Compressed: &compressed,
 		Tags:       tags.ToMap(),
 	}
 
@@ -409,16 +476,14 @@ func listHandler(w http.ResponseWriter, r *http.Request) {
 			writeErrorResponse(w, obj.Err)
 			return
 		}
-		_, ok := obj.UserMetadata["X-Amz-Meta-Optimized"]
-		optimized := ok
-		_, ok = obj.UserMetadata["X-Amz-Meta-Compressed"]
-		compressed := ok
+		optimized := obj.UserMetadata["X-Amz-Meta-Optimized"] == "true"
+		compressed := obj.UserMetadata["X-Amz-Meta-Compressed"] == "true"
 		backups = append(backups, backupInfo{
 			Name:       path.Base(obj.Key),
 			Created:    &obj.LastModified,
 			Size:       obj.Size,
-			Optimized:  optimized,
-			Compressed: compressed,
+			Optimized:  &optimized,
+			Compressed: &compressed,
 		})
 	}
 
@@ -428,5 +493,7 @@ func listHandler(w http.ResponseWriter, r *http.Request) {
 func healthHandler(w http.ResponseWriter, r *http.Request) {
 	// A very simple health check.
 	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("X-Content-Type-Options", "nosniff")
+
 	w.WriteHeader(http.StatusOK)
 }

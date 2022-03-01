@@ -125,7 +125,38 @@ Response example:
 
 ### GET /1.0/instances/{name}/backups/{backup}
 
-Response example:
+Response example when backup is generated:
+
+```json
+{
+  "metadata": {
+    "name": "backup_2022-03-01-00-2142.tar.gz",
+    "state": "generating",
+    "progress": 0
+  },
+  "status": "Success",
+  "status_code": 200,
+  "type": "sync"
+}
+```
+
+Response example when backup is being uploaded:
+
+```json
+{
+  "metadata": {
+    "name": "backup_2022-03-01-00-2530.tar.gz",
+    "size": 555339059,
+    "state": "uploading",
+    "progress": 40206336
+  },
+  "status": "Success",
+  "status_code": 200,
+  "type": "sync"
+}
+```
+
+Response example when backup is persisted:
 
 ```json
 {

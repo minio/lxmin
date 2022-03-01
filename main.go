@@ -183,10 +183,10 @@ func mainHTTP(c *cli.Context) error {
 
 	r.HandleFunc("/1.0/instances/{name}/backups", listHandler).
 		Methods(http.MethodGet)
-	r.HandleFunc("/1.0/instances/{name}/backups/{backup}", infoHandler).
-		Methods(http.MethodGet)
 	r.HandleFunc("/1.0/instances/{name}/backups", backupHandler).
 		Methods(http.MethodPost)
+	r.HandleFunc("/1.0/instances/{name}/backups/{backup}", infoHandler).
+		Methods(http.MethodGet)
 	r.HandleFunc("/1.0/instances/{name}/backups/{backup}", deleteHandler).
 		Methods(http.MethodDelete)
 	r.HandleFunc("/1.0/instances/{name}/backups/{backup}", restoreHandler).
