@@ -1,4 +1,4 @@
-// Copyright (c) 2015-2021 MinIO, Inc.
+// Copyright (c) 2015-2022 MinIO, Inc.
 //
 // This project is part of MinIO Object Storage stack
 //
@@ -186,7 +186,16 @@ var globalBackupState = &backupState{
 	backups: map[string]*backupReader{},
 }
 
-func performBackup(instance, backup string, tagsMap map[string]string, partSize int64, r *http.Request) error {
+func performBackup(instance, backup string, tagsMap map[string]string, partSize int64, startedAt time.Time, r *http.Request) error {
+	notifyEvent(eventInfo{
+		OpType:          Backup,
+		State:           Started,
+		Name:            backup,
+		Instance:        instance,
+		StartedAt:       &startedAt,
+		IncomingRequest: r.URL.String(),
+	})
+
 	cmd := exec.Command("lxc", "export", instance, backup)
 	optimized := r.Form.Get("optimize") == "true"
 	if optimized {
@@ -231,10 +240,31 @@ func performBackup(instance, backup string, tagsMap map[string]string, partSize 
 	}
 	_, err = globalS3Clnt.PutObject(context.Background(), globalBucket, path.Join(instance, backup), f, fi.Size(), opts)
 	f.Close()
+	if err == nil {
+		completedAt := time.Now()
+		notifyEvent(eventInfo{
+			OpType:          Backup,
+			State:           Success,
+			Name:            backup,
+			Instance:        instance,
+			StartedAt:       &startedAt,
+			CompletedAt:     &completedAt,
+			IncomingRequest: r.URL.String(),
+		})
+	}
 	return err
 }
 
-func performRestore(instance, backup string, r *http.Request) error {
+func performRestore(instance, backup string, startedAt time.Time, r *http.Request) error {
+	notifyEvent(eventInfo{
+		OpType:          Restore,
+		State:           Started,
+		Name:            backup,
+		Instance:        instance,
+		StartedAt:       &startedAt,
+		IncomingRequest: r.URL.String(),
+	})
+
 	opts := minio.GetObjectOptions{}
 	obj, err := globalS3Clnt.GetObject(context.Background(), globalBucket, path.Join(instance, backup), opts)
 	if err != nil {
@@ -266,7 +296,23 @@ func performRestore(instance, backup string, r *http.Request) error {
 		return err
 	}
 
-	return os.Remove(backup)
+	if err := os.Remove(backup); err != nil {
+		return err
+	}
+
+	completedAt := time.Now()
+
+	notifyEvent(eventInfo{
+		OpType:          Restore,
+		State:           Success,
+		Name:            backup,
+		Instance:        instance,
+		StartedAt:       &startedAt,
+		CompletedAt:     &completedAt,
+		IncomingRequest: r.URL.String(),
+	})
+
+	return nil
 }
 
 func restoreHandler(w http.ResponseWriter, r *http.Request) {
@@ -290,9 +336,20 @@ func restoreHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	go func() {
-		rerr := performRestore(instance, backup, r)
-		if rerr != nil {
-			log.Println(rerr)
+		startedAt := time.Now()
+		if err := performRestore(instance, backup, startedAt, r); err != nil {
+			failedAt := time.Now()
+			notifyEvent(eventInfo{
+				OpType:          Restore,
+				State:           Failed,
+				Name:            backup,
+				Instance:        instance,
+				StartedAt:       &startedAt,
+				FailedAt:        &failedAt,
+				Error:           err,
+				IncomingRequest: r.URL.String(),
+			})
+			log.Println(err)
 		}
 	}()
 
@@ -306,7 +363,6 @@ func restoreHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("X-Content-Type-Options", "nosniff")
 
 	json.NewEncoder(w).Encode(sresp)
-
 }
 
 func backupHandler(w http.ResponseWriter, r *http.Request) {
@@ -327,8 +383,7 @@ func backupHandler(w http.ResponseWriter, r *http.Request) {
 		partSize = 64 * humanize.MiByte
 	}
 
-	tagsHdr := r.Header.Get("x-amz-tagging")
-	tagsSet, err := tags.Parse(tagsHdr, true)
+	tagsSet, err := tags.Parse(r.Form.Get("tags"), true)
 	if err != nil {
 		writeErrorResponse(w, err)
 		return
@@ -336,9 +391,20 @@ func backupHandler(w http.ResponseWriter, r *http.Request) {
 
 	backup := "backup_" + time.Now().Format("2006-01-02-15-0405") + ".tar.gz"
 	go func() {
-		berr := performBackup(instance, backup, tagsSet.ToMap(), partSize, r)
-		if berr != nil {
-			log.Println(berr)
+		startedAt := time.Now()
+		if err := performBackup(instance, backup, tagsSet.ToMap(), partSize, startedAt, r); err != nil {
+			failedAt := time.Now()
+			notifyEvent(eventInfo{
+				OpType:          Restore,
+				State:           Failed,
+				Name:            backup,
+				Instance:        instance,
+				StartedAt:       &startedAt,
+				FailedAt:        &failedAt,
+				Error:           err,
+				IncomingRequest: r.URL.String(),
+			})
+			log.Println(err)
 		}
 	}()
 

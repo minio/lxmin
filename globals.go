@@ -1,4 +1,4 @@
-// Copyright (c) 2015-2021 MinIO, Inc.
+// Copyright (c) 2015-2022 MinIO, Inc.
 //
 // This project is part of MinIO Object Storage stack
 //
@@ -20,6 +20,7 @@ package main
 import (
 	"context"
 	"crypto/x509"
+	"net/http"
 	"net/url"
 
 	"github.com/minio/cli"
@@ -29,10 +30,12 @@ import (
 )
 
 var (
-	globalS3Clnt   *minio.Client
-	globalBucket   string
-	globalTLSCerts *certs.Manager
-	globalRootCAs  *x509.CertPool
+	globalS3Clnt         *minio.Client
+	globalBucket         string
+	globalTLSCerts       *certs.Manager
+	globalRootCAs        *x509.CertPool
+	globalNotifyClnt     *http.Client
+	globalNotifyEndpoint string
 )
 
 // Set global states. NOTE: It is deliberately kept monolithic to ensure we dont miss out any flags.
@@ -70,6 +73,12 @@ func setGlobalsFromContext(c *cli.Context) error {
 	for _, cert := range publicCerts {
 		globalRootCAs.AddCert(cert)
 	}
+
+	globalNotifyClnt = &http.Client{
+		Transport: DefaultTransport,
+	}
+
+	globalNotifyEndpoint = c.String("notify-endpoint")
 
 	return nil
 }

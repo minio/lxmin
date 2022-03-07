@@ -1,4 +1,4 @@
-// Copyright (c) 2015-2021 MinIO, Inc.
+// Copyright (c) 2015-2022 MinIO, Inc.
 //
 // This project is part of MinIO Object Storage stack
 //
@@ -66,6 +66,11 @@ var globalFlags = []cli.Flag{
 		Usage:  "enable TLS REST API service",
 	},
 	cli.StringFlag{
+		Name:   "notify-endpoint",
+		EnvVar: "LXMIN_NOTIFY_ENDPOINT",
+		Usage:  "notification endpoint for backup and restore operations",
+	},
+	cli.StringFlag{
 		Name:   "cert",
 		EnvVar: "LXMIN_TLS_CERT",
 		Usage:  "TLS server certificate",
@@ -95,11 +100,12 @@ GLOBAL FLAGS:
   {{range .VisibleFlags}}{{.}}
   {{end}}{{end}}
 ENVIRONMENT VARIABLES:
-  LXMIN_ENDPOINT      endpoint for MinIO server
-  LXMIN_BUCKET        bucket to save/restore backup(s)
-  LXMIN_ACCESS_KEY    access key credential
-  LXMIN_SECRET_KEY    secret key credential
-  LXMIN_ADDRESS       run as HTTPs REST API service
+  LXMIN_ENDPOINT        endpoint for MinIO server
+  LXMIN_BUCKET          bucket to save/restore backup(s)
+  LXMIN_ACCESS_KEY      access key credential
+  LXMIN_SECRET_KEY      secret key credential
+  LXMIN_ADDRESS         run as HTTPs REST API service
+  LXMIN_NOTIFY_ENDPOINT endpoint for notifications for backup and restore operations
 `
 
 var appCmds = []cli.Command{

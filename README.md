@@ -44,11 +44,12 @@ GLOBAL FLAGS:
   --help, -h          show help
 
 ENVIRONMENT VARIABLES:
-  LXMIN_ENDPOINT      endpoint for MinIO server
-  LXMIN_BUCKET        bucket to save/restore backup(s)
-  LXMIN_ACCESS_KEY    access key credential
-  LXMIN_SECRET_KEY    secret key credential
-  LXMIN_ADDRESS       run as HTTPs REST API service
+  LXMIN_ENDPOINT        endpoint for MinIO server
+  LXMIN_BUCKET          bucket to save/restore backup(s)
+  LXMIN_ACCESS_KEY      access key credential
+  LXMIN_SECRET_KEY      secret key credential
+  LXMIN_ADDRESS         run as HTTPs REST API service
+  LXMIN_NOTIFY_ENDPOINT notification endpoint for backup and restore operations
 ```
 
 ## REST API
@@ -61,6 +62,7 @@ export LXMIN_BUCKET="backups"
 export LXMIN_ACCESS_KEY="minioadmin"
 export LXMIN_SECRET_KEY="minioadmin"
 export LXMIN_ADDRESS=":8000"
+export LXMIN_NOTIFY_ENDPOINT="https://webhook.site/9d86f64f-78dd-4cbc-bd6c-5fbd90ef1701"
 export LXMIN_TLS_CERT="/var/snap/lxd/common/lxd/server.crt"
 export LXMIN_TLS_KEY="/var/snap/lxd/common/lxd/server.key"
 export LXMIN_TLS_CAPATH="${HOME}/.lxc/"
@@ -73,53 +75,34 @@ The spirit of this this API is to be close to LXD REST API documentation, authen
 
 | Method | API                                    | Desc                                                                                                                     |
 |:-------|:---------------------------------------|:-------------------------------------------------------------------------------------------------------------------------|
-| GET    | /1.0/instances/{name}/backups          | Get the backups (Returns a list of instance backups on MinIO, along with some addtional metadata)                        |
-| GET    | /1.0/instances/{name}/backups/{backup} | Get backup specific metadata and information                                                                             |
 | POST   | /1.0/instances/{name}/backups          | Create a backup to MinIO (Optionally you can add x-amz-tagging: "key=value" format to add additional tags on the backup) |
-| DELETE | /1.0/instances/{name}/backups/{backup} | Delete a backup from MinIO                                                                                               |
+| GET    | /1.0/instances/{name}/backups/{backup} | Get backup specific metadata and information                                                                             |
 | POST   | /1.0/instances/{name}/backups/{backup} | Restore a backup from MinIO                                                                                              |
+| GET    | /1.0/instances/{name}/backups          | Get the backups (Returns a list of instance backups on MinIO, along with some addtional metadata)                        |
+| DELETE | /1.0/instances/{name}/backups/{backup} | Delete a backup from MinIO                                                                                               |
 
 Response type for this API will be always `application/json`
 
-### GET /1.0/instances/{name}/backups
+### POST /1.0/instances/{name}/backups
+
+| Query Params | Desc                                                                         |
+|:-------------|:-----------------------------------------------------------------------------|
+| optimize     | enables optimized backup for faster restore operations                       |
+| tags         | allow custom tags on the current backup                                      |
+| partSize     | custom part size used for uploading to MinIO storage, defaults to '67108864' |
 
 Response example:
 
 ```json
 {
-  "metadata": [
-    {
-      "name": "backup_2022-02-17-08-3732.tar.gz",
-      "created": "2022-02-17T08:38:47.609Z",
-      "size": 913921606,
-      "optimized": true,
-      "compressed": false
-    },
-    {
-      "name": "backup_2022-02-17-09-0524.tar.gz",
-      "created": "2022-02-17T09:06:39.324Z",
-      "size": 913898354,
-      "optimized": true,
-      "compressed": false
-    },
-    {
-      "name": "backup_2022-02-17-09-3329.tar.gz",
-      "created": "2022-02-17T09:34:44.868Z",
-      "size": 913879736,
-      "optimized": true,
-      "compressed": false
-    },
-    {
-      "name": "backup_2022-02-26-07-3921.tar.gz",
-      "created": "2022-02-26T07:41:07.868Z",
-      "size": 1303072030,
-      "optimized": true,
-      "compressed": true
-    }
-  ],
-  "status": "Success",
-  "status_code": 200,
-  "type": "sync"
+  "metadata": {
+    "name": "backup_2022-02-26-07-5218.tar.gz",
+    "optimized": true,
+    "compressed": true
+  },
+  "status": "Operation created",
+  "status_code": 100,
+  "type": "async"
 }
 ```
 
@@ -177,20 +160,57 @@ Response example when backup is persisted:
 }
 ```
 
-### POST /1.0/instances/{name}/backups
+### POST /1.0/instances/{name}/backups/{backup}
 
 Response example:
 
 ```json
 {
-  "metadata": {
-    "name": "backup_2022-02-26-07-5218.tar.gz",
-    "optimized": true,
-    "compressed": true
-  },
   "status": "Operation created",
   "status_code": 100,
   "type": "async"
+}
+```
+
+### GET /1.0/instances/{name}/backups
+
+Response example:
+
+```json
+{
+  "metadata": [
+    {
+      "name": "backup_2022-02-17-08-3732.tar.gz",
+      "created": "2022-02-17T08:38:47.609Z",
+      "size": 913921606,
+      "optimized": true,
+      "compressed": false
+    },
+    {
+      "name": "backup_2022-02-17-09-0524.tar.gz",
+      "created": "2022-02-17T09:06:39.324Z",
+      "size": 913898354,
+      "optimized": true,
+      "compressed": false
+    },
+    {
+      "name": "backup_2022-02-17-09-3329.tar.gz",
+      "created": "2022-02-17T09:34:44.868Z",
+      "size": 913879736,
+      "optimized": true,
+      "compressed": false
+    },
+    {
+      "name": "backup_2022-02-26-07-3921.tar.gz",
+      "created": "2022-02-26T07:41:07.868Z",
+      "size": 1303072030,
+      "optimized": true,
+      "compressed": true
+    }
+  ],
+  "status": "Success",
+  "status_code": 200,
+  "type": "sync"
 }
 ```
 
@@ -203,18 +223,6 @@ Response example:
   "status": "Success",
   "status_code": 200,
   "type": "sync"
-}
-```
-
-### POST /1.0/instances/{name}/backups/{backup}
-
-Response example:
-
-```json
-{
-  "status": "Operation created",
-  "status_code": 100,
-  "type": "async"
 }
 ```
 
