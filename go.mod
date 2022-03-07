@@ -8,6 +8,7 @@ require (
 	github.com/charmbracelet/lipgloss v0.5.0
 	github.com/cheggaaa/pb/v3 v3.0.8
 	github.com/dustin/go-humanize v1.0.0
+	github.com/gorilla/handlers v1.5.1
 	github.com/gorilla/mux v1.8.0
 	github.com/minio/cli v1.22.0
 	github.com/minio/minio-go/v7 v7.0.23
@@ -18,6 +19,7 @@ require (
 	github.com/VividCortex/ewma v1.1.1 // indirect
 	github.com/containerd/console v1.0.3 // indirect
 	github.com/fatih/color v1.12.0 // indirect
+	github.com/felixge/httpsnoop v1.0.1 // indirect
 	github.com/google/uuid v1.1.1 // indirect
 	github.com/gopherjs/gopherjs v0.0.0-20220104163920-15ed2e8cf2bd // indirect
 	github.com/json-iterator/go v1.1.10 // indirect

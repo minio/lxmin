@@ -187,14 +187,15 @@ var globalBackupState = &backupState{
 }
 
 func performBackup(instance, backup string, tagsMap map[string]string, partSize int64, startedAt time.Time, r *http.Request) error {
+	notifyEndpoint := r.Form.Get("notifyEndpoint")
 	notifyEvent(eventInfo{
-		OpType:          Backup,
-		State:           Started,
-		Name:            backup,
-		Instance:        instance,
-		StartedAt:       &startedAt,
-		IncomingRequest: r.URL.String(),
-	})
+		OpType:    Backup,
+		State:     Started,
+		Name:      backup,
+		Instance:  instance,
+		StartedAt: &startedAt,
+		RawURL:    r.URL.String(),
+	}, notifyEndpoint)
 
 	cmd := exec.Command("lxc", "export", instance, backup)
 	optimized := r.Form.Get("optimize") == "true"
@@ -243,27 +244,28 @@ func performBackup(instance, backup string, tagsMap map[string]string, partSize 
 	if err == nil {
 		completedAt := time.Now()
 		notifyEvent(eventInfo{
-			OpType:          Backup,
-			State:           Success,
-			Name:            backup,
-			Instance:        instance,
-			StartedAt:       &startedAt,
-			CompletedAt:     &completedAt,
-			IncomingRequest: r.URL.String(),
-		})
+			OpType:      Backup,
+			State:       Success,
+			Name:        backup,
+			Instance:    instance,
+			StartedAt:   &startedAt,
+			CompletedAt: &completedAt,
+			RawURL:      r.URL.String(),
+		}, notifyEndpoint)
 	}
 	return err
 }
 
 func performRestore(instance, backup string, startedAt time.Time, r *http.Request) error {
+	notifyEndpoint := r.Form.Get("notifyEndpoint")
 	notifyEvent(eventInfo{
-		OpType:          Restore,
-		State:           Started,
-		Name:            backup,
-		Instance:        instance,
-		StartedAt:       &startedAt,
-		IncomingRequest: r.URL.String(),
-	})
+		OpType:    Restore,
+		State:     Started,
+		Name:      backup,
+		Instance:  instance,
+		StartedAt: &startedAt,
+		RawURL:    r.URL.String(),
+	}, notifyEndpoint)
 
 	opts := minio.GetObjectOptions{}
 	obj, err := globalS3Clnt.GetObject(context.Background(), globalBucket, path.Join(instance, backup), opts)
@@ -303,14 +305,14 @@ func performRestore(instance, backup string, startedAt time.Time, r *http.Reques
 	completedAt := time.Now()
 
 	notifyEvent(eventInfo{
-		OpType:          Restore,
-		State:           Success,
-		Name:            backup,
-		Instance:        instance,
-		StartedAt:       &startedAt,
-		CompletedAt:     &completedAt,
-		IncomingRequest: r.URL.String(),
-	})
+		OpType:      Restore,
+		State:       Success,
+		Name:        backup,
+		Instance:    instance,
+		StartedAt:   &startedAt,
+		CompletedAt: &completedAt,
+		RawURL:      r.URL.String(),
+	}, notifyEndpoint)
 
 	return nil
 }
@@ -335,20 +337,21 @@ func restoreHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	notifyEndpoint := r.Form.Get("notifyEndpoint")
 	go func() {
 		startedAt := time.Now()
 		if err := performRestore(instance, backup, startedAt, r); err != nil {
 			failedAt := time.Now()
 			notifyEvent(eventInfo{
-				OpType:          Restore,
-				State:           Failed,
-				Name:            backup,
-				Instance:        instance,
-				StartedAt:       &startedAt,
-				FailedAt:        &failedAt,
-				Error:           err,
-				IncomingRequest: r.URL.String(),
-			})
+				OpType:    Restore,
+				State:     Failed,
+				Name:      backup,
+				Instance:  instance,
+				StartedAt: &startedAt,
+				FailedAt:  &failedAt,
+				Error:     err,
+				RawURL:    r.URL.String(),
+			}, notifyEndpoint)
 			log.Println(err)
 		}
 	}()
@@ -389,21 +392,23 @@ func backupHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	notifyEndpoint := r.Form.Get("notifyEndpoint")
+
 	backup := "backup_" + time.Now().Format("2006-01-02-15-0405") + ".tar.gz"
 	go func() {
 		startedAt := time.Now()
 		if err := performBackup(instance, backup, tagsSet.ToMap(), partSize, startedAt, r); err != nil {
 			failedAt := time.Now()
 			notifyEvent(eventInfo{
-				OpType:          Restore,
-				State:           Failed,
-				Name:            backup,
-				Instance:        instance,
-				StartedAt:       &startedAt,
-				FailedAt:        &failedAt,
-				Error:           err,
-				IncomingRequest: r.URL.String(),
-			})
+				OpType:    Restore,
+				State:     Failed,
+				Name:      backup,
+				Instance:  instance,
+				StartedAt: &startedAt,
+				FailedAt:  &failedAt,
+				Error:     err,
+				RawURL:    r.URL.String(),
+			}, notifyEndpoint)
 			log.Println(err)
 		}
 	}()
@@ -451,6 +456,14 @@ func deleteHandler(w http.ResponseWriter, r *http.Request) {
 		WithVersions: true,
 	}) {
 		if obj.Err != nil {
+			switch minio.ToErrorResponse(obj.Err).Code {
+			case "NotImplemented":
+				// fallback for ListObjectVersions not implemented.
+				if err := globalS3Clnt.RemoveObject(context.Background(), globalBucket, obj.Key, opts); err != nil {
+					writeErrorResponse(w, obj.Err)
+					return
+				}
+			}
 			writeErrorResponse(w, obj.Err)
 			return
 		}

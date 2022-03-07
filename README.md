@@ -85,11 +85,12 @@ Response type for this API will be always `application/json`
 
 ### POST /1.0/instances/{name}/backups
 
-| Query Params | Desc                                                                         |
-|:-------------|:-----------------------------------------------------------------------------|
-| optimize     | enables optimized backup for faster restore operations                       |
-| tags         | allow custom tags on the current backup                                      |
-| partSize     | custom part size used for uploading to MinIO storage, defaults to '67108864' |
+| Query Params   | Desc                                                                         |
+|:---------------|:-----------------------------------------------------------------------------|
+| optimize       | enables optimized backup for faster restore operations                       |
+| tags           | allow custom tags on the current backup                                      |
+| notifyEndpoint | notification endpoint for success/failed backup operation                    |
+| partSize       | custom part size used for uploading to MinIO storage, defaults to '67108864' |
 
 Response example:
 
@@ -161,6 +162,10 @@ Response example when backup is persisted:
 ```
 
 ### POST /1.0/instances/{name}/backups/{backup}
+
+| Query Params   | Desc                                                       |
+|:---------------|:-----------------------------------------------------------|
+| notifyEndpoint | notification endpoint for success/failed restore operation |
 
 Response example:
 

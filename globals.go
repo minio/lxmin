@@ -30,12 +30,11 @@ import (
 )
 
 var (
-	globalS3Clnt         *minio.Client
-	globalBucket         string
-	globalTLSCerts       *certs.Manager
-	globalRootCAs        *x509.CertPool
-	globalNotifyClnt     *http.Client
-	globalNotifyEndpoint string
+	globalS3Clnt     *minio.Client
+	globalBucket     string
+	globalTLSCerts   *certs.Manager
+	globalRootCAs    *x509.CertPool
+	globalNotifyClnt *http.Client
 )
 
 // Set global states. NOTE: It is deliberately kept monolithic to ensure we dont miss out any flags.
@@ -77,8 +76,6 @@ func setGlobalsFromContext(c *cli.Context) error {
 	globalNotifyClnt = &http.Client{
 		Transport: DefaultTransport,
 	}
-
-	globalNotifyEndpoint = c.String("notify-endpoint")
 
 	return nil
 }

@@ -30,6 +30,7 @@ import (
 	"os/signal"
 	"time"
 
+	"github.com/gorilla/handlers"
 	"github.com/gorilla/mux"
 	"github.com/minio/cli"
 )
@@ -66,11 +67,6 @@ var globalFlags = []cli.Flag{
 		Usage:  "enable TLS REST API service",
 	},
 	cli.StringFlag{
-		Name:   "notify-endpoint",
-		EnvVar: "LXMIN_NOTIFY_ENDPOINT",
-		Usage:  "notification endpoint for backup and restore operations",
-	},
-	cli.StringFlag{
 		Name:   "cert",
 		EnvVar: "LXMIN_TLS_CERT",
 		Usage:  "TLS server certificate",
@@ -105,7 +101,6 @@ ENVIRONMENT VARIABLES:
   LXMIN_ACCESS_KEY      access key credential
   LXMIN_SECRET_KEY      secret key credential
   LXMIN_ADDRESS         run as HTTPs REST API service
-  LXMIN_NOTIFY_ENDPOINT endpoint for notifications for backup and restore operations
 `
 
 var appCmds = []cli.Command{
@@ -187,17 +182,12 @@ func mainHTTP(c *cli.Context) error {
 	r.StrictSlash(false)
 	r.SkipClean(true)
 
-	r.HandleFunc("/1.0/instances/{name}/backups", listHandler).
-		Methods(http.MethodGet)
-	r.HandleFunc("/1.0/instances/{name}/backups", backupHandler).
-		Methods(http.MethodPost)
-	r.HandleFunc("/1.0/instances/{name}/backups/{backup}", infoHandler).
-		Methods(http.MethodGet)
-	r.HandleFunc("/1.0/instances/{name}/backups/{backup}", deleteHandler).
-		Methods(http.MethodDelete)
-	r.HandleFunc("/1.0/instances/{name}/backups/{backup}", restoreHandler).
-		Methods(http.MethodPost)
-	r.HandleFunc("/1.0/health", healthHandler)
+	r.HandleFunc("/1.0/instances/{name}/backups", listHandler).Methods(http.MethodGet)
+	r.HandleFunc("/1.0/instances/{name}/backups", backupHandler).Methods(http.MethodPost)
+	r.HandleFunc("/1.0/instances/{name}/backups/{backup}", infoHandler).Methods(http.MethodGet)
+	r.HandleFunc("/1.0/instances/{name}/backups/{backup}", deleteHandler).Methods(http.MethodDelete)
+	r.HandleFunc("/1.0/instances/{name}/backups/{backup}", restoreHandler).Methods(http.MethodPost)
+	r.HandleFunc("/1.0/health", healthHandler).Methods(http.MethodGet, http.MethodHead)
 	r.Use(authenticateTLSClientHandler)
 
 	tlsConfig := &tls.Config{
@@ -213,7 +203,7 @@ func mainHTTP(c *cli.Context) error {
 	})
 
 	srv := &http.Server{
-		Handler:     r,
+		Handler:     handlers.CompressHandler(handlers.LoggingHandler(os.Stdout, handlers.ProxyHeaders(r))),
 		Addr:        c.String("address"),
 		TLSConfig:   tlsConfig,
 		IdleTimeout: time.Second * 60,

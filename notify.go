@@ -40,29 +40,25 @@ const (
 )
 
 type eventInfo struct {
-	OpType          string     `json:"opType"`
-	State           string     `json:"state"`
-	Name            string     `json:"name"`
-	Instance        string     `json:"instance"`
-	StartedAt       *time.Time `json:"startedAt,omitempty"`
-	CompletedAt     *time.Time `json:"completedAt,omitempty"`
-	FailedAt        *time.Time `json:"failedAt,omitempty"`
-	IncomingRequest string     `json:"incomingRequest,omitempty"`
-	Error           error      `json:"error,omitempty"`
+	OpType      string     `json:"opType"`
+	State       string     `json:"state"`
+	Name        string     `json:"name"`
+	Instance    string     `json:"instance"`
+	StartedAt   *time.Time `json:"startedAt,omitempty"`
+	CompletedAt *time.Time `json:"completedAt,omitempty"`
+	FailedAt    *time.Time `json:"failedAt,omitempty"`
+	RawURL      string     `json:"rawURL,omitempty"`
+	Error       error      `json:"error,omitempty"`
 }
 
-func notifyEvent(e eventInfo) {
-	if globalNotifyEndpoint == "" {
-		return
-	}
-
+func notifyEvent(e eventInfo, endpoint string) {
 	data, err := json.Marshal(&e)
 	if err != nil {
 		log.Println(err)
 		return
 	}
 
-	req, err := http.NewRequest(http.MethodPost, globalNotifyEndpoint, bytes.NewReader(data))
+	req, err := http.NewRequest(http.MethodPost, endpoint, bytes.NewReader(data))
 	if err != nil {
 		log.Println(err)
 		return
