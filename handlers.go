@@ -459,18 +459,20 @@ func deleteHandler(w http.ResponseWriter, r *http.Request) {
 			switch minio.ToErrorResponse(obj.Err).Code {
 			case "NotImplemented":
 				// fallback for ListObjectVersions not implemented.
-				if err := globalS3Clnt.RemoveObject(context.Background(), globalBucket, obj.Key, opts); err != nil {
-					writeErrorResponse(w, obj.Err)
+				if err := globalS3Clnt.RemoveObject(context.Background(), globalBucket, prefix, opts); err != nil {
+					writeErrorResponse(w, err)
 					return
 				}
+			default:
+				writeErrorResponse(w, obj.Err)
+				return
 			}
-			writeErrorResponse(w, obj.Err)
-			return
-		}
-		opts.VersionID = obj.VersionID
-		if err := globalS3Clnt.RemoveObject(context.Background(), globalBucket, obj.Key, opts); err != nil {
-			writeErrorResponse(w, err)
-			return
+		} else {
+			opts.VersionID = obj.VersionID
+			if err := globalS3Clnt.RemoveObject(context.Background(), globalBucket, obj.Key, opts); err != nil {
+				writeErrorResponse(w, err)
+				return
+			}
 		}
 	}
 
