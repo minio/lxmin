@@ -27,6 +27,7 @@ import (
 	"log"
 	"mime"
 	"net/http"
+	"net/url"
 	"os"
 	"os/exec"
 	"path"
@@ -187,7 +188,11 @@ var globalBackupState = &backupState{
 }
 
 func performBackup(instance, backup string, tagsMap map[string]string, partSize int64, startedAt time.Time, r *http.Request) error {
-	notifyEndpoint := r.Form.Get("notifyEndpoint")
+	notifyEndpoint, err := url.QueryUnescape(r.Form.Get("notifyEndpoint"))
+	if err != nil {
+		return err
+	}
+
 	notifyEvent(eventInfo{
 		OpType:    Backup,
 		State:     Started,
@@ -257,7 +262,11 @@ func performBackup(instance, backup string, tagsMap map[string]string, partSize 
 }
 
 func performRestore(instance, backup string, startedAt time.Time, r *http.Request) error {
-	notifyEndpoint := r.Form.Get("notifyEndpoint")
+	notifyEndpoint, err := url.QueryUnescape(r.Form.Get("notifyEndpoint"))
+	if err != nil {
+		return err
+	}
+
 	notifyEvent(eventInfo{
 		OpType:    Restore,
 		State:     Started,
@@ -337,7 +346,12 @@ func restoreHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	notifyEndpoint := r.Form.Get("notifyEndpoint")
+	notifyEndpoint, err := url.QueryUnescape(r.Form.Get("notifyEndpoint"))
+	if err != nil {
+		writeErrorResponse(w, errors.New("invalid notifyEndpoint"))
+		return
+	}
+
 	go func() {
 		startedAt := time.Now()
 		if err := performRestore(instance, backup, startedAt, r); err != nil {
@@ -392,7 +406,11 @@ func backupHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	notifyEndpoint := r.Form.Get("notifyEndpoint")
+	notifyEndpoint, err := url.QueryUnescape(r.Form.Get("notifyEndpoint"))
+	if err != nil {
+		writeErrorResponse(w, err)
+		return
+	}
 
 	backup := "backup_" + time.Now().Format("2006-01-02-15-0405") + ".tar.gz"
 	go func() {
