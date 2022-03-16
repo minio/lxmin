@@ -86,7 +86,7 @@ func deleteMain(c *cli.Context) error {
 	}
 
 	opts := minio.RemoveObjectOptions{}
-	for obj := range globalS3Clnt.ListObjects(context.Background(), globalBucket, minio.ListObjectsOptions{
+	for obj := range globalContext.Clnt.ListObjects(context.Background(), globalContext.Bucket, minio.ListObjectsOptions{
 		Prefix:       prefix,
 		WithVersions: true,
 	}) {
@@ -94,7 +94,7 @@ func deleteMain(c *cli.Context) error {
 			return obj.Err
 		}
 		opts.VersionID = obj.VersionID
-		if err := globalS3Clnt.RemoveObject(context.Background(), globalBucket, obj.Key, opts); err != nil {
+		if err := globalContext.Clnt.RemoveObject(context.Background(), globalContext.Bucket, obj.Key, opts); err != nil {
 			return err
 		}
 	}

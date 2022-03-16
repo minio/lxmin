@@ -81,6 +81,11 @@ var globalFlags = []cli.Flag{
 		EnvVar: "LXMIN_TLS_CAPATH",
 		Usage:  "TLS trust certs for incoming clients",
 	},
+	cli.StringFlag{
+		Name:   "staging",
+		EnvVar: "LXMIN_STAGING_ROOT",
+		Usage:  "root path for staging the backups before uploading to MinIO",
+	},
 }
 
 var helpTemplate = `NAME:
@@ -94,13 +99,9 @@ COMMANDS:
   {{end}}{{if .VisibleFlags}}
 GLOBAL FLAGS:
   {{range .VisibleFlags}}{{.}}
-  {{end}}{{end}}
-ENVIRONMENT VARIABLES:
-  LXMIN_ENDPOINT        endpoint for MinIO server
-  LXMIN_BUCKET          bucket to save/restore backup(s)
-  LXMIN_ACCESS_KEY      access key credential
-  LXMIN_SECRET_KEY      secret key credential
-  LXMIN_ADDRESS         run as HTTPs REST API service
+  {{end}}
+ENVIRONMENT VARIABLES:{{range .VisibleFlags}}
+  {{if ne .EnvVar ""}}{{.EnvVar}}{{"\t"}}{{.Usage}}{{end}}{{end}}{{end}}
 `
 
 var appCmds = []cli.Command{
@@ -150,7 +151,7 @@ func authenticateTLSClientHandler(h http.Handler) http.Handler {
 			KeyUsages: []x509.ExtKeyUsage{
 				x509.ExtKeyUsageClientAuth,
 			},
-			Roots: globalRootCAs,
+			Roots: globalContext.RootCAs,
 		}); err != nil {
 			writeErrorResponse(w, err)
 			return
@@ -194,7 +195,7 @@ func mainHTTP(c *cli.Context) error {
 		PreferServerCipherSuites: true,
 		MinVersion:               tls.VersionTLS12,
 		NextProtos:               []string{"http/1.1", "h2"},
-		GetCertificate:           globalTLSCerts.GetCertificate,
+		GetCertificate:           globalContext.TLSCerts.GetCertificate,
 		ClientAuth:               tls.RequestClientCert,
 	}
 

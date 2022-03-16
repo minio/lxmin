@@ -101,10 +101,12 @@ func backupMain(c *cli.Context) error {
 	}
 
 	backup := "backup_" + time.Now().Format("2006-01-02-15-0405") + ".tar.gz"
-	cmd := exec.Command("lxc", "export", instance, backup)
+	localPath := path.Join(globalContext.StagingRoot, backup)
+
+	cmd := exec.Command("lxc", "export", instance, localPath)
 	optimized := c.Bool("optimize")
 	if optimized {
-		cmd = exec.Command("lxc", "export", "--optimized-storage", instance, backup)
+		cmd = exec.Command("lxc", "export", "--optimized-storage", instance, localPath)
 	}
 	cmd.Stdout = ioutil.Discard
 
@@ -130,11 +132,11 @@ func backupMain(c *cli.Context) error {
 
 	wg.Wait()
 
-	f, err := os.Open(backup)
+	f, err := os.Open(localPath)
 	if err != nil {
 		return err
 	}
-	defer os.Remove(backup)
+	defer os.Remove(localPath)
 	fi, err := f.Stat()
 	if err != nil {
 		return err
@@ -155,7 +157,7 @@ func backupMain(c *cli.Context) error {
 		UserMetadata: usermetadata,
 		ContentType:  mime.TypeByExtension(".tar.gz"),
 	}
-	_, err = globalS3Clnt.PutObject(context.Background(), globalBucket, path.Join(instance, backup), barReader, fi.Size(), opts)
+	_, err = globalContext.Clnt.PutObject(context.Background(), globalContext.Bucket, path.Join(instance, backup), barReader, fi.Size(), opts)
 	barReader.Close()
 	return err
 }

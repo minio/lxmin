@@ -65,13 +65,13 @@ func infoMain(c *cli.Context) error {
 	}
 
 	opts := minio.GetObjectTaggingOptions{}
-	tags, err := globalS3Clnt.GetObjectTagging(context.Background(), globalBucket, path.Join(instance, backup), opts)
+	tags, err := globalContext.Clnt.GetObjectTagging(context.Background(), globalContext.Bucket, path.Join(instance, backup), opts)
 	if err != nil {
 		return err
 	}
 
 	sopts := minio.StatObjectOptions{}
-	objInfo, err := globalS3Clnt.StatObject(context.Background(), globalBucket, path.Join(instance, backup), sopts)
+	objInfo, err := globalContext.Clnt.StatObject(context.Background(), globalContext.Bucket, path.Join(instance, backup), sopts)
 	if err != nil {
 		return err
 	}

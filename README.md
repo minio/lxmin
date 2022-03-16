@@ -41,15 +41,20 @@ GLOBAL FLAGS:
   --cert value        TLS server certificate [$LXMIN_TLS_CERT]
   --key value         TLS server private key [$LXMIN_TLS_KEY]
   --capath value      TLS trust certs for incoming clients [$LXMIN_TLS_CAPATH]
+  --staging value     root path for staging the backups before uploading to MinIO [$LXMIN_STAGING_ROOT]
   --help, -h          show help
 
 ENVIRONMENT VARIABLES:
-  LXMIN_ENDPOINT        endpoint for MinIO server
-  LXMIN_BUCKET          bucket to save/restore backup(s)
-  LXMIN_ACCESS_KEY      access key credential
-  LXMIN_SECRET_KEY      secret key credential
-  LXMIN_ADDRESS         run as HTTPs REST API service
-  LXMIN_NOTIFY_ENDPOINT notification endpoint for backup and restore operations
+  LXMIN_ENDPOINT      endpoint for MinIO server
+  LXMIN_BUCKET        bucket to save/restore backup(s)
+  LXMIN_ACCESS_KEY    access key credential
+  LXMIN_SECRET_KEY    secret key credential
+  LXMIN_ADDRESS       enable TLS REST API service
+  LXMIN_TLS_CERT      TLS server certificate
+  LXMIN_TLS_KEY       TLS server private key
+  LXMIN_TLS_CAPATH    TLS trust certs for incoming clients
+  LXMIN_STAGING_ROOT  root path for staging the backups before uploading to MinIO
+
 ```
 
 ## REST API
@@ -97,9 +102,9 @@ Response example:
 ```json
 {
   "metadata": {
-    "name": "backup_2022-02-26-07-5218.tar.gz",
-    "optimized": true,
-    "compressed": true
+	"name": "backup_2022-02-26-07-5218.tar.gz",
+	"optimized": true,
+	"compressed": true
   },
   "status": "Operation created",
   "status_code": 100,
@@ -114,9 +119,9 @@ Response example when backup is generated:
 ```json
 {
   "metadata": {
-    "name": "backup_2022-03-01-00-2142.tar.gz",
-    "state": "generating",
-    "progress": 0
+	"name": "backup_2022-03-01-00-2142.tar.gz",
+	"state": "generating",
+	"progress": 0
   },
   "status": "Success",
   "status_code": 200,
@@ -129,10 +134,10 @@ Response example when backup is being uploaded:
 ```json
 {
   "metadata": {
-    "name": "backup_2022-03-01-00-2530.tar.gz",
-    "size": 555339059,
-    "state": "uploading",
-    "progress": 40206336
+	"name": "backup_2022-03-01-00-2530.tar.gz",
+	"size": 555339059,
+	"state": "uploading",
+	"progress": 40206336
   },
   "status": "Success",
   "status_code": 200,
@@ -145,15 +150,15 @@ Response example when backup is persisted:
 ```json
 {
   "metadata": {
-    "name": "backup_2022-02-26-08-2027.tar.gz",
-    "created": "2022-02-26T08:22:12Z",
-    "size": 1302974262,
-    "optimized": true,
-    "compressed": true,
-    "tags": {
-      "os": "Ubuntu",
-      "version": "20.04"
-    }
+	"name": "backup_2022-02-26-08-2027.tar.gz",
+	"created": "2022-02-26T08:22:12Z",
+	"size": 1302974262,
+	"optimized": true,
+	"compressed": true,
+	"tags": {
+	  "os": "Ubuntu",
+	  "version": "20.04"
+	}
   },
   "status": "Success",
   "status_code": 200,
@@ -184,34 +189,34 @@ Response example:
 ```json
 {
   "metadata": [
-    {
-      "name": "backup_2022-02-17-08-3732.tar.gz",
-      "created": "2022-02-17T08:38:47.609Z",
-      "size": 913921606,
-      "optimized": true,
-      "compressed": false
-    },
-    {
-      "name": "backup_2022-02-17-09-0524.tar.gz",
-      "created": "2022-02-17T09:06:39.324Z",
-      "size": 913898354,
-      "optimized": true,
-      "compressed": false
-    },
-    {
-      "name": "backup_2022-02-17-09-3329.tar.gz",
-      "created": "2022-02-17T09:34:44.868Z",
-      "size": 913879736,
-      "optimized": true,
-      "compressed": false
-    },
-    {
-      "name": "backup_2022-02-26-07-3921.tar.gz",
-      "created": "2022-02-26T07:41:07.868Z",
-      "size": 1303072030,
-      "optimized": true,
-      "compressed": true
-    }
+	{
+	  "name": "backup_2022-02-17-08-3732.tar.gz",
+	  "created": "2022-02-17T08:38:47.609Z",
+	  "size": 913921606,
+	  "optimized": true,
+	  "compressed": false
+	},
+	{
+	  "name": "backup_2022-02-17-09-0524.tar.gz",
+	  "created": "2022-02-17T09:06:39.324Z",
+	  "size": 913898354,
+	  "optimized": true,
+	  "compressed": false
+	},
+	{
+	  "name": "backup_2022-02-17-09-3329.tar.gz",
+	  "created": "2022-02-17T09:34:44.868Z",
+	  "size": 913879736,
+	  "optimized": true,
+	  "compressed": false
+	},
+	{
+	  "name": "backup_2022-02-26-07-3921.tar.gz",
+	  "created": "2022-02-26T07:41:07.868Z",
+	  "size": 1303072030,
+	  "optimized": true,
+	  "compressed": true
+	}
   ],
   "status": "Success",
   "status_code": 200,

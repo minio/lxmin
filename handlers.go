@@ -202,10 +202,11 @@ func performBackup(instance, backup string, tagsMap map[string]string, partSize 
 		RawURL:    r.URL.String(),
 	}, notifyEndpoint)
 
-	cmd := exec.Command("lxc", "export", instance, backup)
+	localPath := path.Join(globalContext.StagingRoot, backup)
+	cmd := exec.Command("lxc", "export", instance, localPath)
 	optimized := r.Form.Get("optimize") == "true"
 	if optimized {
-		cmd = exec.Command("lxc", "export", "--optimized-storage", instance, backup)
+		cmd = exec.Command("lxc", "export", "--optimized-storage", instance, localPath)
 	}
 	cmd.Stdout = ioutil.Discard
 
@@ -217,12 +218,12 @@ func performBackup(instance, backup string, tagsMap map[string]string, partSize 
 		return err
 	}
 
-	f, err := os.Open(backup)
+	f, err := os.Open(localPath)
 	if err != nil {
 		return err
 	}
 
-	defer os.Remove(backup)
+	defer os.Remove(localPath)
 
 	fi, err := f.Stat()
 	if err != nil {
@@ -244,7 +245,7 @@ func performBackup(instance, backup string, tagsMap map[string]string, partSize 
 		ContentType:  mime.TypeByExtension(".tar.gz"),
 		Progress:     bkReader,
 	}
-	_, err = globalS3Clnt.PutObject(context.Background(), globalBucket, path.Join(instance, backup), f, fi.Size(), opts)
+	_, err = globalContext.Clnt.PutObject(context.Background(), globalContext.Bucket, path.Join(instance, backup), f, fi.Size(), opts)
 	f.Close()
 	if err == nil {
 		completedAt := time.Now()
@@ -277,14 +278,16 @@ func performRestore(instance, backup string, startedAt time.Time, r *http.Reques
 	}, notifyEndpoint)
 
 	opts := minio.GetObjectOptions{}
-	obj, err := globalS3Clnt.GetObject(context.Background(), globalBucket, path.Join(instance, backup), opts)
+	obj, err := globalContext.Clnt.GetObject(context.Background(), globalContext.Bucket, path.Join(instance, backup), opts)
 	if err != nil {
 		return err
 	}
 
-	os.Remove(backup) // remove any existing file.
+	localPath := path.Join(globalContext.StagingRoot, backup)
 
-	w, err := os.Create(backup)
+	os.Remove(localPath) // remove any existing file.
+
+	w, err := os.Create(localPath)
 	if err != nil {
 		obj.Close()
 		return err
@@ -292,11 +295,11 @@ func performRestore(instance, backup string, startedAt time.Time, r *http.Reques
 	io.Copy(w, obj)
 	obj.Close()
 
-	cmd := exec.Command("lxc", "import", backup)
+	cmd := exec.Command("lxc", "import", localPath)
 	cmd.Stdout = ioutil.Discard
 
 	if err := cmd.Run(); err != nil {
-		os.Remove(backup)
+		os.Remove(localPath)
 		return err
 	}
 
@@ -469,7 +472,7 @@ func deleteHandler(w http.ResponseWriter, r *http.Request) {
 	prefix := path.Join(path.Clean(instance), backup)
 
 	opts := minio.RemoveObjectOptions{}
-	for obj := range globalS3Clnt.ListObjects(context.Background(), globalBucket, minio.ListObjectsOptions{
+	for obj := range globalContext.Clnt.ListObjects(context.Background(), globalContext.Bucket, minio.ListObjectsOptions{
 		Prefix:       prefix,
 		WithVersions: true,
 	}) {
@@ -477,7 +480,7 @@ func deleteHandler(w http.ResponseWriter, r *http.Request) {
 			switch minio.ToErrorResponse(obj.Err).Code {
 			case "NotImplemented":
 				// fallback for ListObjectVersions not implemented.
-				if err := globalS3Clnt.RemoveObject(context.Background(), globalBucket, prefix, opts); err != nil {
+				if err := globalContext.Clnt.RemoveObject(context.Background(), globalContext.Bucket, prefix, opts); err != nil {
 					writeErrorResponse(w, err)
 					return
 				}
@@ -487,7 +490,7 @@ func deleteHandler(w http.ResponseWriter, r *http.Request) {
 			}
 		} else {
 			opts.VersionID = obj.VersionID
-			if err := globalS3Clnt.RemoveObject(context.Background(), globalBucket, obj.Key, opts); err != nil {
+			if err := globalContext.Clnt.RemoveObject(context.Background(), globalContext.Bucket, obj.Key, opts); err != nil {
 				writeErrorResponse(w, err)
 				return
 			}
@@ -528,14 +531,14 @@ func infoHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	opts := minio.GetObjectTaggingOptions{}
-	tags, err := globalS3Clnt.GetObjectTagging(context.Background(), globalBucket, path.Join(instance, backup), opts)
+	tags, err := globalContext.Clnt.GetObjectTagging(context.Background(), globalContext.Bucket, path.Join(instance, backup), opts)
 	if err != nil {
 		writeErrorResponse(w, err)
 		return
 	}
 
 	sopts := minio.StatObjectOptions{}
-	obj, err := globalS3Clnt.StatObject(context.Background(), globalBucket, path.Join(instance, backup), sopts)
+	obj, err := globalContext.Clnt.StatObject(context.Background(), globalContext.Bucket, path.Join(instance, backup), sopts)
 	if err != nil {
 		writeErrorResponse(w, err)
 		return
@@ -566,7 +569,7 @@ func listHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var backups []backupInfo
-	for obj := range globalS3Clnt.ListObjects(context.Background(), globalBucket, minio.ListObjectsOptions{
+	for obj := range globalContext.Clnt.ListObjects(context.Background(), globalContext.Bucket, minio.ListObjectsOptions{
 		Prefix:       instance,
 		Recursive:    true,
 		WithMetadata: true,

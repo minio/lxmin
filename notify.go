@@ -67,7 +67,7 @@ func notifyEvent(e eventInfo, endpoint string) {
 	// Set proper content type.
 	req.Header.Set("Content-Type", "application/json")
 
-	resp, err := globalNotifyClnt.Do(req)
+	resp, err := globalContext.NotifyClnt.Do(req)
 	if err != nil {
 		log.Println(err)
 		return

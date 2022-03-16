@@ -19,9 +19,12 @@ package main
 
 import (
 	"context"
+	"crypto/tls"
 	"crypto/x509"
+	"net"
 	"net/http"
 	"net/url"
+	"time"
 
 	"github.com/minio/cli"
 	"github.com/minio/minio-go/v7"
@@ -29,12 +32,17 @@ import (
 	"github.com/minio/pkg/certs"
 )
 
+type lxminContext struct {
+	Clnt        *minio.Client
+	Bucket      string
+	StagingRoot string
+	TLSCerts    *certs.Manager
+	RootCAs     *x509.CertPool
+	NotifyClnt  *http.Client
+}
+
 var (
-	globalS3Clnt     *minio.Client
-	globalBucket     string
-	globalTLSCerts   *certs.Manager
-	globalRootCAs    *x509.CertPool
-	globalNotifyClnt *http.Client
+	globalContext *lxminContext
 )
 
 // Set global states. NOTE: It is deliberately kept monolithic to ensure we dont miss out any flags.
@@ -52,9 +60,7 @@ func setGlobalsFromContext(c *cli.Context) error {
 		return err
 	}
 
-	globalS3Clnt = s3Client
-	globalBucket = c.String("bucket")
-	globalTLSCerts, err = certs.NewManager(context.Background(), c.String("cert"), c.String("key"), loadX509KeyPair)
+	tlsCerts, err := certs.NewManager(context.Background(), c.String("cert"), c.String("key"), loadX509KeyPair)
 	if err != nil {
 		return err
 	}
@@ -64,17 +70,51 @@ func setGlobalsFromContext(c *cli.Context) error {
 		return err
 	}
 
-	globalRootCAs, err = certs.GetRootCAs(c.String("capath"))
+	globalContext = &lxminContext{
+		Clnt:        s3Client,
+		Bucket:      c.String("bucket"),
+		StagingRoot: c.String("staging"),
+		TLSCerts:    tlsCerts,
+	}
+
+	rootCAs, err := certs.GetRootCAs(c.String("capath"))
 	if err != nil {
 		return err
 	}
 
 	for _, cert := range publicCerts {
-		globalRootCAs.AddCert(cert)
+		rootCAs.AddCert(cert)
 	}
 
-	globalNotifyClnt = &http.Client{
-		Transport: DefaultTransport,
+	globalContext.RootCAs = rootCAs
+	globalContext.NotifyClnt = &http.Client{
+		Transport: &http.Transport{
+			Proxy: http.ProxyFromEnvironment,
+			DialContext: (&net.Dialer{
+				Timeout:   30 * time.Second,
+				KeepAlive: 30 * time.Second,
+			}).DialContext,
+			MaxIdleConns:          256,
+			MaxIdleConnsPerHost:   16,
+			ResponseHeaderTimeout: time.Minute,
+			IdleConnTimeout:       time.Minute,
+			TLSHandshakeTimeout:   10 * time.Second,
+			ExpectContinueTimeout: 10 * time.Second,
+			// Set this value so that the underlying transport round-tripper
+			// doesn't try to auto decode the body of objects with
+			// content-encoding set to `gzip`.
+			//
+			// Refer:
+			//    https://golang.org/src/net/http/transport.go?h=roundTrip#L1843
+			DisableCompression: true,
+			TLSClientConfig: &tls.Config{
+				// Can't use SSLv3 because of POODLE and BEAST
+				// Can't use TLSv1.0 because of POODLE and BEAST using CBC cipher
+				// Can't use TLSv1.1 because of RC4 cipher usage
+				MinVersion: tls.VersionTLS12,
+				RootCAs:    rootCAs,
+			},
+		},
 	}
 
 	return nil

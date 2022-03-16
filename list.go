@@ -88,7 +88,7 @@ func listMain(c *cli.Context) error {
 		Render
 
 	data := map[string][]string{}
-	for obj := range globalS3Clnt.ListObjects(context.Background(), globalBucket, minio.ListObjectsOptions{
+	for obj := range globalContext.Clnt.ListObjects(context.Background(), globalContext.Bucket, minio.ListObjectsOptions{
 		Prefix:       instance,
 		Recursive:    true,
 		WithMetadata: true,

@@ -75,7 +75,7 @@ func restoreMain(c *cli.Context) error {
 	}
 
 	opts := minio.GetObjectOptions{}
-	obj, err := globalS3Clnt.GetObject(context.Background(), globalBucket, path.Join(instance, backup), opts)
+	obj, err := globalContext.Clnt.GetObject(context.Background(), globalContext.Bucket, path.Join(instance, backup), opts)
 	if err != nil {
 		return err
 	}
@@ -98,7 +98,8 @@ func restoreMain(c *cli.Context) error {
 	io.Copy(w, barReader)
 	barReader.Close()
 
-	cmd := exec.Command("lxc", "import", backup)
+	localPath := path.Join(globalContext.StagingRoot, backup)
+	cmd := exec.Command("lxc", "import", localPath)
 	cmd.Stdout = ioutil.Discard
 
 	p := tea.NewProgram(initSpinnerUI(lxcOpts{
@@ -131,5 +132,5 @@ func restoreMain(c *cli.Context) error {
 
 	wg.Wait()
 
-	return os.Remove(backup)
+	return os.Remove(localPath)
 }
