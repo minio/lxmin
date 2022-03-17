@@ -19,6 +19,7 @@ package main
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"os/exec"
 	"strings"
@@ -36,6 +37,7 @@ const (
 type spinnerUI struct {
 	spinner  spinner.Model
 	quitting bool
+	err      error
 	opts     lxcOpts
 }
 
@@ -48,6 +50,7 @@ func (m *spinnerUI) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.KeyMsg:
 		switch msg.String() {
 		case "ctrl+c":
+			m.err = errors.New("canceling")
 			m.quitting = true
 			return m, tea.Quit
 		default:
@@ -57,6 +60,10 @@ func (m *spinnerUI) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		var cmd tea.Cmd
 		m.spinner, cmd = m.spinner.Update(msg)
 		return m, cmd
+	case error:
+		m.err = msg
+		m.quitting = true
+		return m, tea.Quit
 	case bool:
 		if msg {
 			m.quitting = true
@@ -69,6 +76,9 @@ func (m *spinnerUI) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 func (m *spinnerUI) View() string {
 	spin := m.spinner.View()
 	if m.quitting {
+		if m.err != nil {
+			return m.err.Error()
+		}
 		spin = "success\n"
 	}
 
@@ -89,6 +99,8 @@ func initSpinnerUI(opts lxcOpts) *spinnerUI {
 	}
 }
 
+var instanceExists = errors.New("instance exists")
+
 func checkInstance(instance string) error {
 	var out bytes.Buffer
 	cmd := exec.Command("lxc", "list", instance, "-c", "n", "-f", "csv")
@@ -97,7 +109,7 @@ func checkInstance(instance string) error {
 		return err
 	}
 	if strings.TrimSpace(out.String()) == instance {
-		return fmt.Errorf("'%s' instance is already running by this name", instance)
+		return fmt.Errorf("'%s' instance is already running by this name: %w", instance, instanceExists)
 	}
 	return nil
 }

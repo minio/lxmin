@@ -22,6 +22,7 @@ import (
 	"fmt"
 	"io"
 	"io/ioutil"
+	"log"
 	"os"
 	"os/exec"
 	"path"
@@ -70,7 +71,7 @@ func restoreMain(c *cli.Context) error {
 		cli.ShowAppHelpAndExit(c, 1) // last argument is exit code
 	}
 
-	if err := checkInstance(instance); err != nil {
+	if err := checkInstance(instance); err == nil {
 		return err
 	}
 
@@ -112,19 +113,21 @@ func restoreMain(c *cli.Context) error {
 	go func() {
 		defer wg.Done()
 		if err := p.Start(); err != nil {
-			os.Exit(1)
+			log.Fatalln(err)
 		}
 	}()
 
 	go func() {
 		if err := cmd.Run(); err != nil {
-			os.Exit(1)
+			p.Send(err)
+			log.Fatalln(err)
 		}
 
 		cmd = exec.Command("lxc", "start", instance)
 		cmd.Stdout = ioutil.Discard
 		if err := cmd.Run(); err != nil {
-			os.Exit(1)
+			p.Send(err)
+			log.Fatalln(err)
 		}
 
 		p.Send(true)

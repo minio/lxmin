@@ -21,6 +21,7 @@ import (
 	"context"
 	"fmt"
 	"io/ioutil"
+	"log"
 	"mime"
 	"os"
 	"os/exec"
@@ -100,6 +101,10 @@ func backupMain(c *cli.Context) error {
 		return err
 	}
 
+	if err := checkInstance(instance); err == nil {
+		return fmt.Errorf("no instance found by name: '%s'", instance)
+	}
+
 	backup := "backup_" + time.Now().Format("2006-01-02-15-0405") + ".tar.gz"
 	localPath := path.Join(globalContext.StagingRoot, backup)
 
@@ -114,20 +119,21 @@ func backupMain(c *cli.Context) error {
 		instance: instance,
 		message:  `Preparing backup for (%s) instance: %s`,
 	}))
+
 	var wg sync.WaitGroup
-	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		if err := p.Start(); err != nil {
-			os.Exit(1)
+		if err := cmd.Run(); err != nil {
+			p.Send(err)
+			log.Fatalln(err)
 		}
+		p.Send(true)
 	}()
 
 	go func() {
-		if err := cmd.Run(); err != nil {
-			os.Exit(1)
+		if err := p.Start(); err != nil {
+			log.Fatalln(err)
 		}
-		p.Send(true)
 	}()
 
 	wg.Wait()

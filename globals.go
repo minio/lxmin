@@ -60,33 +60,36 @@ func setGlobalsFromContext(c *cli.Context) error {
 		return err
 	}
 
-	tlsCerts, err := certs.NewManager(context.Background(), c.String("cert"), c.String("key"), loadX509KeyPair)
-	if err != nil {
-		return err
-	}
-
-	publicCerts, err := parsePublicCertFile(c.String("cert"))
-	if err != nil {
-		return err
-	}
-
 	globalContext = &lxminContext{
 		Clnt:        s3Client,
 		Bucket:      c.String("bucket"),
 		StagingRoot: c.String("staging"),
-		TLSCerts:    tlsCerts,
 	}
 
-	rootCAs, err := certs.GetRootCAs(c.String("capath"))
-	if err != nil {
-		return err
+	if c.String("cert") != "" || c.String("key") != "" {
+		tlsCerts, err := certs.NewManager(context.Background(), c.String("cert"), c.String("key"), loadX509KeyPair)
+		if err != nil {
+			return err
+		}
+
+		publicCerts, err := parsePublicCertFile(c.String("cert"))
+		if err != nil {
+			return err
+		}
+
+		rootCAs, err := certs.GetRootCAs(c.String("capath"))
+		if err != nil {
+			return err
+		}
+
+		for _, cert := range publicCerts {
+			rootCAs.AddCert(cert)
+		}
+
+		globalContext.TLSCerts = tlsCerts
+		globalContext.RootCAs = rootCAs
 	}
 
-	for _, cert := range publicCerts {
-		rootCAs.AddCert(cert)
-	}
-
-	globalContext.RootCAs = rootCAs
 	globalContext.NotifyClnt = &http.Client{
 		Transport: &http.Transport{
 			Proxy: http.ProxyFromEnvironment,
@@ -112,7 +115,7 @@ func setGlobalsFromContext(c *cli.Context) error {
 				// Can't use TLSv1.0 because of POODLE and BEAST using CBC cipher
 				// Can't use TLSv1.1 because of RC4 cipher usage
 				MinVersion: tls.VersionTLS12,
-				RootCAs:    rootCAs,
+				RootCAs:    globalContext.RootCAs,
 			},
 		},
 	}
