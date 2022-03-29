@@ -193,15 +193,6 @@ func performBackup(instance, backup string, tagsMap map[string]string, partSize 
 		return err
 	}
 
-	notifyEvent(eventInfo{
-		OpType:    Backup,
-		State:     Started,
-		Name:      backup,
-		Instance:  instance,
-		StartedAt: &startedAt,
-		RawURL:    r.URL.String(),
-	}, notifyEndpoint)
-
 	localPath := path.Join(globalContext.StagingRoot, backup)
 	cmd := exec.Command("lxc", "export", instance, localPath)
 	optimized := r.Form.Get("optimize") == "true"
@@ -267,15 +258,6 @@ func performRestore(instance, backup string, startedAt time.Time, r *http.Reques
 	if err != nil {
 		return err
 	}
-
-	notifyEvent(eventInfo{
-		OpType:    Restore,
-		State:     Started,
-		Name:      backup,
-		Instance:  instance,
-		StartedAt: &startedAt,
-		RawURL:    r.URL.String(),
-	}, notifyEndpoint)
 
 	opts := minio.GetObjectOptions{}
 	obj, err := globalContext.Clnt.GetObject(context.Background(), globalContext.Bucket, path.Join(instance, backup), opts)
