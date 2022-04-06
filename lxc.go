@@ -79,10 +79,11 @@ func (m *spinnerUI) View() string {
 		if m.err != nil {
 			return m.err.Error()
 		}
-		spin = "success\n"
+		spin = "✔"
+		m.opts.message += "\n"
 	}
 
-	return fmt.Sprintf(m.opts.message, m.opts.instance, spin)
+	return fmt.Sprintf(m.opts.message, spin, m.opts.instance)
 }
 
 type lxcOpts struct {
