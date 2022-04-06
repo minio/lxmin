@@ -96,12 +96,21 @@ func listMain(c *cli.Context) error {
 		if obj.Err != nil {
 			return obj.Err
 		}
+
+		// Do not consider the profiles in the listing.
+		if !strings.HasSuffix(obj.Key, ".tar.gz") {
+			continue
+		}
+
 		inst := path.Clean(instance)
 		if inst == "" || inst == "." {
 			inst = path.Dir(obj.Key)
 		}
+
+		backupName := strings.TrimSuffix(path.Base(obj.Key), "_instance.tar.gz")
+
 		data["Instance"] = append(data["Instance"], inst)
-		data["Name"] = append(data["Name"], path.Base(obj.Key))
+		data["Name"] = append(data["Name"], backupName)
 		data["Created"] = append(data["Created"], obj.LastModified.Format(printDate))
 		data["Size"] = append(data["Size"], humanize.IBytes(uint64(obj.Size)))
 		if _, ok := obj.UserMetadata["X-Amz-Meta-Optimized"]; ok {

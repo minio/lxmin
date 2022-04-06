@@ -34,6 +34,87 @@ const (
 	serverEncryptionKeyPrefix = "x-amz-server-side-encryption"
 )
 
+type cmdSpinnerUI struct {
+	spinner    spinner.Model
+	quitting   bool
+	err        error
+	warningMsg string
+	cmdFn      func() tea.Msg
+	opts       cOpts
+}
+
+type cOpts struct {
+	instance, message string
+}
+
+func (m *cmdSpinnerUI) Init() tea.Cmd {
+	return tea.Batch(m.spinner.Tick, m.cmdFn)
+}
+
+func (m *cmdSpinnerUI) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	switch msg := msg.(type) {
+	case tea.KeyMsg:
+		switch msg.String() {
+		case "ctrl+c":
+			m.err = errors.New("canceling")
+			m.quitting = true
+			return m, tea.Quit
+		default:
+			return m, nil
+		}
+	case spinner.TickMsg:
+		var cmd tea.Cmd
+		m.spinner, cmd = m.spinner.Update(msg)
+		return m, cmd
+	case error:
+		m.err = msg
+		m.quitting = true
+		return m, tea.Quit
+	case warningMessage:
+		m.warningMsg = msg.msg
+		return m, tea.Quit
+	case bool:
+		if msg {
+			m.quitting = true
+			return m, tea.Quit
+		}
+	}
+	return m, nil
+}
+
+func (m *cmdSpinnerUI) View() string {
+	spin := m.spinner.View()
+
+	if m.warningMsg != "" {
+		spin = "ⓘ"
+		m.opts.message = m.warningMsg
+		m.opts.message += "\n"
+	} else if m.quitting {
+		if m.err != nil {
+			return m.err.Error()
+		}
+		spin = "✔"
+		m.opts.message += "\n"
+	}
+
+	return fmt.Sprintf(m.opts.message, spin, m.opts.instance)
+}
+
+type warningMessage struct {
+	msg string
+}
+
+func initCmdSpinnerUI(fn func() tea.Msg, opts cOpts) *cmdSpinnerUI {
+	s := spinner.New()
+	s.Spinner = spinner.Dot
+	s.Style = lipgloss.NewStyle().Foreground(lipgloss.Color("205"))
+	return &cmdSpinnerUI{
+		spinner: s,
+		cmdFn:   fn,
+		opts:    opts,
+	}
+}
+
 type spinnerUI struct {
 	spinner  spinner.Model
 	quitting bool
@@ -79,10 +160,11 @@ func (m *spinnerUI) View() string {
 		if m.err != nil {
 			return m.err.Error()
 		}
-		spin = "success\n"
+		spin = "✔"
+		m.opts.message += "\n"
 	}
 
-	return fmt.Sprintf(m.opts.message, m.opts.instance, spin)
+	return fmt.Sprintf(m.opts.message, spin, m.opts.instance)
 }
 
 type lxcOpts struct {
