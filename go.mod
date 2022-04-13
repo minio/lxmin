@@ -13,6 +13,7 @@ require (
 	github.com/minio/cli v1.22.0
 	github.com/minio/minio-go/v7 v7.0.23
 	github.com/minio/pkg v1.1.16
+	gopkg.in/yaml.v2 v2.4.0
 )
 
 require (
