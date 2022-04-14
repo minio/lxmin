@@ -20,7 +20,6 @@ package main
 import (
 	"context"
 	"crypto/tls"
-	"crypto/x509"
 	"net"
 	"net/http"
 	"net/url"
@@ -32,18 +31,7 @@ import (
 	"github.com/minio/pkg/certs"
 )
 
-type lxminContext struct {
-	Clnt        *minio.Client
-	Bucket      string
-	StagingRoot string
-	TLSCerts    *certs.Manager
-	RootCAs     *x509.CertPool
-	NotifyClnt  *http.Client
-}
-
-var (
-	globalContext *lxminContext
-)
+var globalContext *lxminContext
 
 // Set global states. NOTE: It is deliberately kept monolithic to ensure we dont miss out any flags.
 func setGlobalsFromContext(c *cli.Context) error {

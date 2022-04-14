@@ -18,14 +18,11 @@
 package main
 
 import (
-	"context"
 	"fmt"
-	"path"
 	"strings"
 
 	"github.com/dustin/go-humanize"
 	"github.com/minio/cli"
-	"github.com/minio/minio-go/v7"
 )
 
 var infoCmd = cli.Command{
@@ -44,8 +41,8 @@ FLAGS:
   {{range .VisibleFlags}}{{.}}
   {{end}}
 EXAMPLES:
-  1. Pretty print tags for a backup 'backup_2022-02-16-04-1040.tar.gz' for instance 'u2':
-     {{.Prompt}} {{.HelpName}} u2 backup_2022-02-16-04-1040.tar.gz
+  1. Pretty print tags for a backup 'backup_2022-02-16-04-1040' for instance 'u2':
+     {{.Prompt}} {{.HelpName}} u2 backup_2022-02-16-04-1040
 `,
 }
 
@@ -59,29 +56,29 @@ func infoMain(c *cli.Context) error {
 		cli.ShowAppHelpAndExit(c, 1) // last argument is exit code
 	}
 
-	backup := strings.TrimSpace(c.Args().Get(1))
-	if backup == "" {
+	backupName := strings.TrimSpace(c.Args().Get(1))
+	if backupName == "" {
 		cli.ShowAppHelpAndExit(c, 1) // last argument is exit code
 	}
 
-	opts := minio.GetObjectTaggingOptions{}
-	tags, err := globalContext.Clnt.GetObjectTagging(context.Background(), globalContext.Bucket, path.Join(instance, backup), opts)
+	bkp := backup{instance: instance, backupName: backupName}
+
+	tags, err := globalContext.GetTags(bkp)
 	if err != nil {
 		return err
 	}
 
-	sopts := minio.StatObjectOptions{}
-	objInfo, err := globalContext.Clnt.StatObject(context.Background(), globalContext.Bucket, path.Join(instance, backup), sopts)
+	meta, err := globalContext.GetMetadata(bkp)
 	if err != nil {
 		return err
 	}
 
 	var msgBuilder strings.Builder
 	// Format properly for alignment based on maxKey leng
-	backup = fmt.Sprintf("%-10s: %s", "Name", backup)
-	msgBuilder.WriteString(backup + "\n")
-	msgBuilder.WriteString(fmt.Sprintf("%-10s: %s ", "Date", objInfo.LastModified.Format(printDate)) + "\n")
-	msgBuilder.WriteString(fmt.Sprintf("%-10s: %-6s ", "Size", humanize.IBytes(uint64(objInfo.Size))) + "\n")
+	backupName = fmt.Sprintf("%-10s: %s", "Name", backupName)
+	msgBuilder.WriteString(backupName + "\n")
+	msgBuilder.WriteString(fmt.Sprintf("%-10s: %s ", "Date", meta.LastModified.Format(printDate)) + "\n")
+	msgBuilder.WriteString(fmt.Sprintf("%-10s: %-6s ", "Size", humanize.IBytes(uint64(meta.Size))) + "\n")
 
 	maxTagsKey := 0
 	for k := range tags.ToMap() {
@@ -91,7 +88,7 @@ func infoMain(c *cli.Context) error {
 	}
 
 	maxKeyMetadata := 0
-	for k := range objInfo.UserMetadata {
+	for k := range meta.UserMetadata {
 		if !strings.HasPrefix(strings.ToLower(k), serverEncryptionKeyPrefix) {
 			switch k {
 			case "Optimized", "Compressed":
@@ -116,7 +113,7 @@ func infoMain(c *cli.Context) error {
 
 	if maxKeyMetadata > 0 {
 		msgBuilder.WriteString(fmt.Sprintf("%-10s:", "Metadata") + "\n")
-		for k, v := range objInfo.UserMetadata {
+		for k, v := range meta.UserMetadata {
 			if !strings.HasPrefix(strings.ToLower(k), serverEncryptionKeyPrefix) {
 				switch k {
 				case "Compressed", "Optimized":

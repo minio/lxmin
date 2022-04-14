@@ -18,14 +18,11 @@
 package main
 
 import (
-	"context"
 	"errors"
 	"fmt"
-	"path"
 	"strings"
 
 	"github.com/minio/cli"
-	"github.com/minio/minio-go/v7"
 )
 
 var deleteFlags = []cli.Flag{
@@ -59,8 +56,8 @@ FLAGS:
   {{range .VisibleFlags}}{{.}}
   {{end}}
 EXAMPLES:
-  1. Delete a backup 'backup_2022-02-16-04-1040.tar.gz' for instance 'u2':
-     {{.Prompt}} {{.HelpName}} u2 backup_2022-02-16-04-1040.tar.gz
+  1. Delete a backup 'backup_2022-02-16-04-1040' for instance 'u2':
+     {{.Prompt}} {{.HelpName}} u2 backup_2022-02-16-04-1040
 `,
 }
 
@@ -74,34 +71,27 @@ func deleteMain(c *cli.Context) error {
 		cli.ShowAppHelpAndExit(c, 1) // last argument is exit code
 	}
 
-	backup := strings.TrimSpace(c.Args().Get(1))
+	backupName := strings.TrimSpace(c.Args().Get(1))
 	deleteAll := c.Bool("all") && c.Bool("force")
-	if backup == "" && !deleteAll {
+	if backupName == "" && !deleteAll {
 		return errors.New("backup name is not optional without --all")
 	}
 
-	prefix := path.Clean(instance) + "/"
-	if backup != "" {
-		prefix = path.Join(prefix, backup)
+	var err error
+	if backupName != "" {
+		bkp := backup{instance: instance, backupName: backupName}
+		err = globalContext.DeleteBackup(bkp)
+	} else {
+		err = globalContext.DeleteAllBackups(instance)
+	}
+	if err != nil {
+		return err
 	}
 
-	opts := minio.RemoveObjectOptions{}
-	for obj := range globalContext.Clnt.ListObjects(context.Background(), globalContext.Bucket, minio.ListObjectsOptions{
-		Prefix:       prefix,
-		WithVersions: true,
-	}) {
-		if obj.Err != nil {
-			return obj.Err
-		}
-		opts.VersionID = obj.VersionID
-		if err := globalContext.Clnt.RemoveObject(context.Background(), globalContext.Bucket, obj.Key, opts); err != nil {
-			return err
-		}
-	}
 	if deleteAll {
 		fmt.Printf("All backups for '%s' deleted successfully\n", instance)
 	} else {
-		fmt.Printf("Backup '%s' deleted successfully\n", backup)
+		fmt.Printf("Backup '%s' deleted successfully\n", backupName)
 	}
 	return nil
 }
