@@ -18,15 +18,12 @@
 package main
 
 import (
-	"context"
 	"fmt"
-	"path"
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
 	"github.com/dustin/go-humanize"
 	"github.com/minio/cli"
-	"github.com/minio/minio-go/v7"
 )
 
 var listCmd = cli.Command{
@@ -66,9 +63,6 @@ func listMain(c *cli.Context) error {
 	}
 
 	instance := strings.TrimSpace(c.Args().Get(0))
-	if instance != "" {
-		instance = path.Clean(instance) + "/"
-	}
 
 	var table strings.Builder
 
@@ -87,33 +81,18 @@ func listMain(c *cli.Context) error {
 		PaddingRight(1).
 		Render
 
+	backups, err := globalContext.ListBackups(instance)
+	if err != nil {
+		return err
+	}
+
 	data := map[string][]string{}
-	for obj := range globalContext.Clnt.ListObjects(context.Background(), globalContext.Bucket, minio.ListObjectsOptions{
-		Prefix:       instance,
-		Recursive:    true,
-		WithMetadata: true,
-	}) {
-		if obj.Err != nil {
-			return obj.Err
-		}
-
-		// Do not consider the profiles in the listing.
-		if !strings.HasSuffix(obj.Key, ".tar.gz") {
-			continue
-		}
-
-		inst := path.Clean(instance)
-		if inst == "" || inst == "." {
-			inst = path.Dir(obj.Key)
-		}
-
-		backupName := strings.TrimSuffix(path.Base(obj.Key), "_instance.tar.gz")
-
-		data["Instance"] = append(data["Instance"], inst)
-		data["Name"] = append(data["Name"], backupName)
-		data["Created"] = append(data["Created"], obj.LastModified.Format(printDate))
-		data["Size"] = append(data["Size"], humanize.IBytes(uint64(obj.Size)))
-		if _, ok := obj.UserMetadata["X-Amz-Meta-Optimized"]; ok {
+	for _, bkp := range backups {
+		data["Instance"] = append(data["Instance"], bkp.instance)
+		data["Name"] = append(data["Name"], bkp.Name)
+		data["Created"] = append(data["Created"], bkp.Created.Format(printDate))
+		data["Size"] = append(data["Size"], humanize.IBytes(uint64(bkp.Size)))
+		if *bkp.Optimized {
 			data["Optimized"] = append(data["Optimized"], tickCell)
 		} else {
 			data["Optimized"] = append(data["Optimized"], crossTickCell)
