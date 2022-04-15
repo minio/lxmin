@@ -503,26 +503,26 @@ func deleteHandler(w http.ResponseWriter, r *http.Request) {
 func infoHandler(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 	instance := vars["name"]
-	backup := vars["backup"]
+	backupName := vars["backup"]
 
 	if instance == "" {
 		writeErrorResponse(w, errors.New("instance name cannot be empty"))
 		return
 	}
 
-	if backup == "" {
+	if backupName == "" {
 		writeErrorResponse(w, errors.New("backup name cannot be empty"))
 		return
 	}
 
-	if reader := globalBackupState.Get(backup); reader != nil {
+	if reader := globalBackupState.Get(backupName); reader != nil {
 		state := "generating"
 		progress := atomic.LoadInt64(&reader.Progress)
 		if reader.Started && progress > 0 {
 			state = "uploading"
 		}
 		writeSuccessResponse(w, backupInfo{
-			Name:     backup,
+			Name:     backupName,
 			Size:     reader.Size,
 			State:    state,
 			Progress: &progress,
@@ -530,27 +530,30 @@ func infoHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	opts := minio.GetObjectTaggingOptions{}
-	tags, err := globalContext.Clnt.GetObjectTagging(context.Background(), globalContext.Bucket, path.Join(instance, backup), opts)
+	bkp := backup{
+		instance:   instance,
+		backupName: backupName,
+	}
+
+	tags, err := globalContext.GetTags(bkp)
 	if err != nil {
 		writeErrorResponse(w, err)
 		return
 	}
 
-	sopts := minio.StatObjectOptions{}
-	obj, err := globalContext.Clnt.StatObject(context.Background(), globalContext.Bucket, path.Join(instance, backup), sopts)
+	meta, err := globalContext.GetMetadata(bkp)
 	if err != nil {
 		writeErrorResponse(w, err)
 		return
 	}
 
-	optimized := obj.UserMetadata["Optimized"] == "true"
-	compressed := obj.UserMetadata["Compressed"] == "true"
+	optimized := meta.UserMetadata["Optimized"] == "true"
+	compressed := meta.UserMetadata["Compressed"] == "true"
 
 	info := backupInfo{
-		Name:       backup,
-		Created:    &obj.LastModified,
-		Size:       obj.Size,
+		Name:       backupName,
+		Created:    &meta.LastModified,
+		Size:       meta.Size,
 		Optimized:  &optimized,
 		Compressed: &compressed,
 		Tags:       tags.ToMap(),
