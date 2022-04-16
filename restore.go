@@ -19,22 +19,17 @@ package main
 
 import (
 	"bytes"
-	"context"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"log"
 	"os"
-	"os/exec"
 	"path"
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/cheggaaa/pb/v3"
 	"github.com/minio/cli"
-	"github.com/minio/minio-go/v7"
 	"github.com/minio/minio-go/v7/pkg/set"
-	"gopkg.in/yaml.v2"
 )
 
 var restoreCmd = cli.Command{
@@ -68,8 +63,8 @@ func restoreMain(c *cli.Context) error {
 		cli.ShowAppHelpAndExit(c, 1) // last argument is exit code
 	}
 
-	backup := strings.TrimSpace(c.Args().Get(1))
-	if backup == "" {
+	backupName := strings.TrimSpace(c.Args().Get(1))
+	if backupName == "" {
 		cli.ShowAppHelpAndExit(c, 1) // last argument is exit code
 	}
 
@@ -77,53 +72,39 @@ func restoreMain(c *cli.Context) error {
 		return err
 	}
 
+	bkp := backup{instance: instance, backupName: backupName}
+
 	// List and collect all backup related files.
-	resInfo := collectBackupInfo(globalContext, instance, backup)
+	resInfo := collectBackupInfo(globalContext, bkp)
 
 	// Download all backup files to staging directory
-	err := downloadBackupFiles(globalContext, instance, backup, resInfo)
+	err := downloadBackupFiles(globalContext, bkp, resInfo)
 	if err != nil {
 		return err
 	}
 
-	restoreProfiles(globalContext, instance, backup, resInfo)
+	restoreProfiles(globalContext, instance, backupName, resInfo)
 
-	restoreInstance(globalContext, instance, backup)
+	restoreInstanceCLI(globalContext, bkp)
 
 	return nil
 }
 
-func restoreInstance(ctx *lxminContext, instance, backupNamePrefix string) {
+func restoreInstanceCLI(ctx *lxminContext, bkp backup) {
 	var lastCmd []string
-	var outBuf bytes.Buffer
+	var outBuf *bytes.Buffer
 	restoreCmd := func() tea.Msg {
-		localPath := path.Join(ctx.StagingRoot, backupNamePrefix+"_instance.tar.gz")
-
-		lastCmd = []string{"lxc", "import", localPath}
-		cmd := exec.Command(lastCmd[0], lastCmd[1:]...)
-		cmd.Stdout = ioutil.Discard
-		cmd.Stderr = &outBuf
-		if err := cmd.Run(); err != nil {
-			return fmt.Errorf("Error importing instance: %v", err)
+		ob, err := restoreInstance(ctx, bkp)
+		if err != nil {
+			outBuf = ob
+			return err
 		}
-
-		// Clear outBuf for next command
-		outBuf = bytes.Buffer{}
-		lastCmd = []string{"lxc", "start", instance}
-		cmd = exec.Command(lastCmd[0], lastCmd[1:]...)
-		cmd.Stdout = ioutil.Discard
-		cmd.Stderr = &outBuf
-		if err := cmd.Run(); err != nil {
-			return fmt.Errorf("Error starting instance: %v", err)
-		}
-
-		defer os.Remove(localPath)
 		return true
 	}
 
 	sUI := initCmdSpinnerUI(
 		restoreCmd,
-		cOpts{instance: instance, message: `%s Launching instance: %s`},
+		cOpts{instance: bkp.instance, message: `%s Launching instance: %s`},
 	)
 	if err := tea.NewProgram(sUI).Start(); err != nil {
 		log.Printf("Last command: `%s`", strings.Join(lastCmd, " "))
@@ -135,28 +116,11 @@ func restoreInstance(ctx *lxminContext, instance, backupNamePrefix string) {
 func restoreProfiles(ctx *lxminContext, instance, backupNamePrefix string, resInfo restoreInfo) {
 	existingProfiles := set.NewStringSet()
 	retrieveExistingProfiles := func() tea.Msg {
-		// First get the list of existing profiles, so we can restore
-		// only missing ones.
-		var outBuf bytes.Buffer
-		cmd := exec.Command("lxc", "profile", "list", "-f", "yaml")
-		cmd.Stdout = &outBuf
-
-		if err := cmd.Run(); err != nil {
+		p, err := fetchExistingProfiles()
+		if err != nil {
 			return err
 		}
-
-		type profileInfo struct {
-			Name string `yaml:"name"`
-		}
-
-		var profileInfos []profileInfo
-		if err := yaml.Unmarshal(outBuf.Bytes(), &profileInfos); err != nil {
-			return fmt.Errorf("Unable to parse profiles list: %v", err)
-		}
-
-		for _, pi := range profileInfos {
-			existingProfiles.Add(pi.Name)
-		}
+		existingProfiles = p
 		return true
 	}
 
@@ -170,32 +134,12 @@ func restoreProfiles(ctx *lxminContext, instance, backupNamePrefix string, resIn
 
 	for i, pf := range resInfo.profiles {
 		restoreProfile := func() tea.Msg {
-			proPath := path.Join(ctx.StagingRoot, path.Base(resInfo.profileKeys[i]))
-
-			if existingProfiles.Contains(pf) {
-				defer os.Remove(proPath)
-				return warningMessage{
-					msg: `%s Skipping profile ` + pf + ` as it already exists for: %s`,
-				}
+			err := restoreProfile(ctx, pf, resInfo.profileKeys[i], existingProfiles)
+			if w, ok := err.(warnMsgErr); ok {
+				return w.msg
+			} else if err != nil {
+				return err
 			}
-
-			cmd := exec.Command("lxc", "profile", "create", pf)
-			if err := cmd.Run(); err != nil {
-				return fmt.Errorf("Error creating profile %s: %v", pf, err)
-			}
-
-			profileFile, err := os.Open(proPath)
-			if err != nil {
-				return fmt.Errorf("Error opening backup file %s: %v", proPath, err)
-			}
-
-			cmd = exec.Command("lxc", "profile", "edit", pf)
-			cmd.Stdin = profileFile
-			if err := cmd.Run(); err != nil {
-				return fmt.Errorf("Error restoring profile %s: %v", pf, err)
-			}
-
-			defer os.Remove(proPath)
 			return true
 		}
 
@@ -207,41 +151,22 @@ func restoreProfiles(ctx *lxminContext, instance, backupNamePrefix string, resIn
 	}
 }
 
-func downloadBackupFiles(ctx *lxminContext, instance, backupNamePrefix string, resInfo restoreInfo) error {
+func downloadBackupFiles(ctx *lxminContext, bkp backup, resInfo restoreInfo) error {
 	bar := pb.Start64(resInfo.totalSize)
 	bar.Set(pb.Bytes, true)
 	defer bar.Finish()
 
-	downloadFn := func(objPath string) error {
-		fpath := path.Join(ctx.StagingRoot, path.Base(objPath))
-		barWriter, err := newBarUpdateWriter(fpath, bar, tmplDl)
-		if err != nil {
-			return err
-		}
-		defer barWriter.Close()
-
-		obj, err := ctx.Clnt.GetObject(context.Background(), ctx.Bucket, objPath, minio.GetObjectOptions{})
-		if err != nil {
-			return err
-		}
-		defer obj.Close()
-
-		_, err = io.Copy(barWriter, obj)
-		return err
-	}
-
 	// Download profiles
 	for _, pkey := range resInfo.profileKeys {
-		err := downloadFn(pkey)
+		err := ctx.downloadItem(pkey, bar)
 		if err != nil {
 			return fmt.Errorf("Error downloading profile file %s: %v", pkey, err)
 		}
 	}
 
 	// Download instance backup
-	instanceBackupKey := path.Join(instance, backupNamePrefix+"_instance.tar.gz")
-	if err := downloadFn(instanceBackupKey); err != nil {
-		return fmt.Errorf("Error downloading instance backup %s: %v", instanceBackupKey, err)
+	if err := ctx.downloadItem(bkp.key(), bar); err != nil {
+		return fmt.Errorf("Error downloading instance backup %s: %v", bkp.key(), err)
 	}
 	return nil
 }
@@ -279,56 +204,21 @@ func (b *barUpdateWriter) Close() error {
 	return nil
 }
 
-type restoreInfo struct {
-	profiles    []string
-	profileKeys []string
-	totalSize   int64
-}
-
 // collectBackupInfo collects backup info so we can show a progress bar and
 // restore profiles in order.
-func collectBackupInfo(ctx *lxminContext, instance, backupNamePrefix string) (bi restoreInfo) {
+func collectBackupInfo(ctx *lxminContext, bkp backup) (bi restoreInfo) {
 	populateRestoreInfo := func() tea.Msg {
-		pno := 0
-		for obj := range ctx.Clnt.ListObjects(context.Background(), ctx.Bucket, minio.ListObjectsOptions{
-			WithMetadata: false,
-			Prefix:       path.Join(instance, backupNamePrefix+"_profile_"),
-			Recursive:    true,
-		}) {
-			if obj.Err != nil {
-				return fmt.Errorf("Error listing backup files: %v", obj.Err)
-			}
-
-			expectedProfilePrefix := fmt.Sprintf("%s_profile_%03d_", backupNamePrefix, pno)
-			pno += 1
-			profileName := strings.TrimPrefix(
-				strings.TrimSuffix(path.Base(obj.Key), ".yaml"),
-				expectedProfilePrefix,
-			)
-
-			// Validate the profile object name.
-			if !strings.HasPrefix(path.Base(obj.Key), expectedProfilePrefix) || !strings.HasSuffix(obj.Key, ".yaml") || profileName == "" {
-				return fmt.Errorf("Unexpected profile file found: %s", obj.Key)
-			}
-
-			bi.totalSize += obj.Size
-			bi.profiles = append(bi.profiles, profileName)
-			bi.profileKeys = append(bi.profileKeys, obj.Key)
-		}
-
-		instanceBackupName := backupNamePrefix + "_instance.tar.gz"
-		oi, err := ctx.Clnt.StatObject(context.Background(), ctx.Bucket, path.Join(instance, instanceBackupName), minio.StatObjectOptions{})
+		ri, err := ctx.fetchRestoreInfo(bkp)
 		if err != nil {
-			return fmt.Errorf("Error getting instance backup file info: %v", err)
+			return err
 		}
-
-		bi.totalSize += oi.Size
+		bi = ri
 		return true
 	}
 
 	sUI := initCmdSpinnerUI(
 		populateRestoreInfo,
-		cOpts{instance: instance, message: `%s Collecting info for backup: %s`},
+		cOpts{instance: bkp.instance, message: `%s Collecting info for backup: %s`},
 	)
 	if err := tea.NewProgram(sUI).Start(); err != nil {
 		log.Fatalln(err)

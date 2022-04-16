@@ -18,19 +18,15 @@
 package main
 
 import (
-	"bytes"
 	"context"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"log"
 	"mime"
 	"os"
-	"os/exec"
 	"path"
 	"strconv"
 	"strings"
-	"sync"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -39,7 +35,6 @@ import (
 	"github.com/minio/cli"
 	"github.com/minio/minio-go/v7"
 	"github.com/minio/minio-go/v7/pkg/tags"
-	"gopkg.in/yaml.v2"
 )
 
 var backupFlags = []cli.Flag{
@@ -244,81 +239,27 @@ func backupInstance(ctx *lxminContext, optimized bool, instance, backupNamePrefi
 	backup := backupNamePrefix + "_instance.tar.gz"
 	localPath := path.Join(ctx.StagingRoot, backup)
 
-	cmd := exec.Command("lxc", "export", instance, localPath)
-	if optimized {
-		cmd = exec.Command("lxc", "export", "--optimized-storage", instance, localPath)
-	}
-	cmd.Stdout = ioutil.Discard
+	var size int64
+	exportFn := func() tea.Msg {
+		n, err := exportInstance(instance, localPath, optimized)
+		if err != nil {
+			return err
+		}
 
-	p := tea.NewProgram(initSpinnerUI(lxcOpts{
+		size = n
+		return true
+	}
+
+	ui := initCmdSpinnerUI(exportFn, cOpts{
 		instance: instance,
 		message:  `%s Preparing backup for instance: %s`,
-	}))
+	})
 
-	var wg sync.WaitGroup
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-		if err := cmd.Run(); err != nil {
-			p.Send(err)
-			log.Fatalln(err)
-		}
-		p.Send(true)
-	}()
-
-	go func() {
-		if err := p.Start(); err != nil {
-			log.Fatalln(err)
-		}
-	}()
-
-	wg.Wait()
-
-	if s, err := os.Stat(localPath); err != nil {
-		return "", 0, fmt.Errorf("Unable to stat file %s: %v", localPath, err)
-	} else {
-		return backup, s.Size(), nil
-	}
-}
-
-func listProfiles(ctx *lxminContext, instance string) ([]string, error) {
-	var outBuf bytes.Buffer
-	cmd := exec.Command("lxc", "config", "show", instance)
-	cmd.Stdout = &outBuf
-
-	p := tea.NewProgram(initSpinnerUI(lxcOpts{
-		instance: instance,
-		message:  `%s Listing profiles for instance: %s`,
-	}))
-
-	var wg sync.WaitGroup
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-		if err := cmd.Run(); err != nil {
-			p.Send(err)
-			log.Fatalln(err)
-		}
-		p.Send(true)
-	}()
-
-	go func() {
-		if err := p.Start(); err != nil {
-			log.Fatalln(err)
-		}
-	}()
-
-	wg.Wait()
-
-	type profileInfo struct {
-		Profiles []string `yaml:"profiles"`
+	if err := tea.NewProgram(ui).Start(); err != nil {
+		log.Fatalln(err)
 	}
 
-	var profiles profileInfo
-	if err := yaml.Unmarshal(outBuf.Bytes(), &profiles); err != nil {
-		return nil, fmt.Errorf("Unable to parse profiles list: %v", err)
-	}
-	return profiles.Profiles, nil
+	return backup, size, nil
 }
 
 type profileInfo struct {
@@ -327,9 +268,24 @@ type profileInfo struct {
 }
 
 func backupProfiles(ctx *lxminContext, instance, backupNamePrefix string) ([]string, map[string]profileInfo, error) {
-	profiles, err := listProfiles(ctx, instance)
-	if err != nil {
-		return nil, nil, err
+	var profiles []string
+	{
+		listProfilesFn := func() tea.Msg {
+			ps, err := listProfiles(instance)
+			if err != nil {
+				return err
+			}
+
+			profiles = ps
+			return true
+		}
+		ui := initCmdSpinnerUI(listProfilesFn, cOpts{
+			instance: instance,
+			message:  `%s Listing profiles for instance: %s`,
+		})
+		if err := tea.NewProgram(ui).Start(); err != nil {
+			log.Fatalln(err)
+		}
 	}
 
 	if len(profiles) > 1000 {
@@ -342,55 +298,29 @@ func backupProfiles(ctx *lxminContext, instance, backupNamePrefix string) ([]str
 		// in the later profiles override those from earlier profiles.
 		profileFile := fmt.Sprintf("%s_profile_%03d_%s.yaml", backupNamePrefix, pno, profile)
 		profilePath := path.Join(ctx.StagingRoot, profileFile)
-		pf, err := os.Create(profilePath)
-		if err != nil {
-			return nil, nil, fmt.Errorf("Unable to create backup file %s: %v", profileFile, err)
-		}
-		cmd := exec.Command("lxc", "profile", "show", profile)
-		cmd.Stdout = pf
 
-		p := tea.NewProgram(initSpinnerUI(lxcOpts{
+		var prSize int64
+		exportProfileFn := func() tea.Msg {
+			n, err := exportProfile(profile, profilePath)
+			if err != nil {
+				return err
+			}
+			prSize = n
+			return true
+		}
+
+		ui := initCmdSpinnerUI(exportProfileFn, cOpts{
 			instance: instance,
 			message:  `%s Fetching profile '` + profile + `' for instance: %s`,
-		}))
+		})
 
-		var wg sync.WaitGroup
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			if err := cmd.Run(); err != nil {
-				p.Send(err)
-				log.Fatalln(err)
-			}
-			p.Send(true)
-		}()
-
-		go func() {
-			if err := p.Start(); err != nil {
-				log.Fatalln(err)
-			}
-		}()
-
-		wg.Wait()
-
-		// Sync file to disk
-		if err := pf.Sync(); err != nil {
-			return nil, nil, fmt.Errorf("Error syncing profile file %s to disk: %v", profileFile, err)
+		if err := tea.NewProgram(ui).Start(); err != nil {
+			log.Fatalln(err)
 		}
 
-		// Save size of the file for showing progress later.
-		if stat, err := pf.Stat(); err != nil {
-			return nil, nil, fmt.Errorf("Unable to stat file %s: %v", profileFile, err)
-		} else {
-			pInfo[profile] = profileInfo{
-				FileName: profileFile,
-				Size:     stat.Size(),
-			}
-		}
-
-		// Close the file
-		if err := pf.Close(); err != nil {
-			return nil, nil, fmt.Errorf("Unable to close file %s: %v", profileFile, err)
+		pInfo[profile] = profileInfo{
+			FileName: profileFile,
+			Size:     prSize,
 		}
 	}
 

@@ -22,14 +22,11 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
-	"io/ioutil"
 	"log"
 	"mime"
 	"net/http"
 	"net/url"
 	"os"
-	"os/exec"
 	"path"
 	"strconv"
 	"sync"
@@ -136,6 +133,7 @@ func (s *successResponse) Render(w http.ResponseWriter) {
 }
 
 type backupInfo struct {
+	instance   string            // name of instance for the backup - not shown in json
 	Name       string            `json:"name"`
 	Created    *time.Time        `json:"created,omitempty"`
 	Size       int64             `json:"size,omitempty"`
@@ -202,35 +200,52 @@ func performBackup(instance, backup string, tagsMap map[string]string, partSize 
 		RawURL:    r.URL.String(),
 	}, notifyEndpoint)
 
-	localPath := path.Join(globalContext.StagingRoot, backup)
-	cmd := exec.Command("lxc", "export", instance, localPath)
-	optimized := r.Form.Get("optimize") == "true"
-	if optimized {
-		cmd = exec.Command("lxc", "export", "--optimized-storage", instance, localPath)
-	}
-	cmd.Stdout = ioutil.Discard
-
 	bkReader := &backupReader{Started: true}
 	globalBackupState.Store(backup, bkReader)
 	defer globalBackupState.Pop(backup)
 
-	if err := cmd.Run(); err != nil {
-		return err
-	}
+	// Export profiles to files.
 
-	f, err := os.Open(localPath)
+	profiles, err := listProfiles(instance)
 	if err != nil {
 		return err
 	}
 
-	defer os.Remove(localPath)
+	if len(profiles) > 1000 {
+		return fmt.Errorf("More than a 1000 profiles per instance not supported.")
+	}
 
-	fi, err := f.Stat()
+	prInfo := make(map[string]profileInfo, len(profiles))
+	for pno, profile := range profiles {
+		// Profiles are numbered because their order matters - settings
+		// in the later profiles override those from earlier profiles.
+		profileFile := fmt.Sprintf("%s_profile_%03d_%s.yaml", backup, pno, profile)
+		profilePath := path.Join(globalContext.StagingRoot, profileFile)
+
+		prSize, err := exportProfile(profile, profilePath)
+		if err != nil {
+			return err
+		}
+
+		prInfo[profile] = profileInfo{
+			FileName: profileFile,
+			Size:     prSize,
+		}
+	}
+
+	// Export instance to tarball
+
+	instanceBkpFilename := backup + "_instance.tar.gz"
+	localPath := path.Join(globalContext.StagingRoot, instanceBkpFilename)
+	optimized := r.Form.Get("optimize") == "true"
+	instanceSize, err := exportInstance(instance, localPath, optimized)
 	if err != nil {
 		return err
 	}
 
-	bkReader.Size = fi.Size()
+	// Upload instance tarball to MinIO.
+
+	bkReader.Size = instanceSize
 	globalBackupState.Store(backup, bkReader)
 
 	usermetadata := map[string]string{}
@@ -245,24 +260,62 @@ func performBackup(instance, backup string, tagsMap map[string]string, partSize 
 		ContentType:  mime.TypeByExtension(".tar.gz"),
 		Progress:     bkReader,
 	}
-	_, err = globalContext.Clnt.PutObject(context.Background(), globalContext.Bucket, path.Join(instance, backup), f, fi.Size(), opts)
-	f.Close()
-	if err == nil {
-		completedAt := time.Now()
-		notifyEvent(eventInfo{
-			OpType:      Backup,
-			State:       Success,
-			Name:        backup,
-			Instance:    instance,
-			StartedAt:   &startedAt,
-			CompletedAt: &completedAt,
-			RawURL:      r.URL.String(),
-		}, notifyEndpoint)
+
+	f, err := os.Open(localPath)
+	if err != nil {
+		return err
 	}
+	defer f.Close()
+	defer os.Remove(localPath)
+
+	_, err = globalContext.Clnt.PutObject(context.Background(), globalContext.Bucket, path.Join(instance, backup), f, instanceSize, opts)
+	if err != nil {
+		return err
+	}
+
+	// Upload profiles to MinIO.
+	for _, profile := range profiles {
+		err := func() error {
+			profileFile := prInfo[profile].FileName
+			size := prInfo[profile].Size
+			fpath := path.Join(globalContext.StagingRoot, profileFile)
+			f, err := os.Open(fpath)
+			if err != nil {
+				return err
+			}
+			defer f.Close()
+			defer os.Remove(fpath)
+
+			opts := minio.PutObjectOptions{
+				UserTags:    tagsMap,
+				PartSize:    uint64(partSize),
+				ContentType: mime.TypeByExtension(".yaml"),
+			}
+			_, err = globalContext.Clnt.PutObject(context.Background(), globalContext.Bucket, path.Join(instance, profileFile), f, size, opts)
+			if err != nil {
+				return fmt.Errorf("Error uploading file %s: %v", fpath, err)
+			}
+			return nil
+		}()
+		if err != nil {
+			return err
+		}
+	}
+
+	completedAt := time.Now()
+	notifyEvent(eventInfo{
+		OpType:      Backup,
+		State:       Success,
+		Name:        backup,
+		Instance:    instance,
+		StartedAt:   &startedAt,
+		CompletedAt: &completedAt,
+		RawURL:      r.URL.String(),
+	}, notifyEndpoint)
 	return err
 }
 
-func performRestore(instance, backup string, startedAt time.Time, r *http.Request) error {
+func performRestore(instance, backupName string, startedAt time.Time, r *http.Request) error {
 	notifyEndpoint, err := url.QueryUnescape(r.Form.Get("notifyEndpoint"))
 	if err != nil {
 		return err
@@ -271,46 +324,53 @@ func performRestore(instance, backup string, startedAt time.Time, r *http.Reques
 	notifyEvent(eventInfo{
 		OpType:    Restore,
 		State:     Started,
-		Name:      backup,
+		Name:      backupName,
 		Instance:  instance,
 		StartedAt: &startedAt,
 		RawURL:    r.URL.String(),
 	}, notifyEndpoint)
 
-	opts := minio.GetObjectOptions{}
-	obj, err := globalContext.Clnt.GetObject(context.Background(), globalContext.Bucket, path.Join(instance, backup), opts)
+	bkp := backup{instance: instance, backupName: backupName}
+
+	// Fetch restore info
+	resInfo, err := globalContext.fetchRestoreInfo(bkp)
 	if err != nil {
 		return err
 	}
 
-	localPath := path.Join(globalContext.StagingRoot, backup)
+	// Download profiles
+	for _, pkey := range resInfo.profileKeys {
+		err := globalContext.downloadItem(pkey, nil)
+		if err != nil {
+			return fmt.Errorf("Error downloading profile file %s: %v", pkey, err)
+		}
+	}
 
-	os.Remove(localPath) // remove any existing file.
+	// Download instance backup
+	if err := globalContext.downloadItem(bkp.key(), nil); err != nil {
+		return fmt.Errorf("Error downloading instance backup %s: %v", bkp.key(), err)
+	}
 
-	w, err := os.Create(localPath)
+	// Fetch existing profiles on the system
+	existingProfiles, err := fetchExistingProfiles()
 	if err != nil {
-		obj.Close()
-		return err
-	}
-	io.Copy(w, obj)
-	obj.Close()
-
-	cmd := exec.Command("lxc", "import", localPath)
-	cmd.Stdout = ioutil.Discard
-
-	if err := cmd.Run(); err != nil {
-		os.Remove(localPath)
 		return err
 	}
 
-	cmd = exec.Command("lxc", "start", instance)
-	cmd.Stdout = ioutil.Discard
-	if err := cmd.Run(); err != nil {
-		os.Remove(backup)
-		return err
+	// Restore profiles - skip those that already exist.
+	for i, pf := range resInfo.profiles {
+		err := restoreProfile(globalContext, pf, resInfo.profileKeys[i], existingProfiles)
+		if _, ok := err.(warnMsgErr); ok {
+			// Skip warning that profile was not replaced for now.
+			continue
+		} else if err != nil {
+			return err
+		}
 	}
 
-	if err := os.Remove(backup); err != nil {
+	// Restore instance
+	_, err = restoreInstance(globalContext, bkp)
+	if err != nil {
 		return err
 	}
 
@@ -319,7 +379,7 @@ func performRestore(instance, backup string, startedAt time.Time, r *http.Reques
 	notifyEvent(eventInfo{
 		OpType:      Restore,
 		State:       Success,
-		Name:        backup,
+		Name:        backupName,
 		Instance:    instance,
 		StartedAt:   &startedAt,
 		CompletedAt: &completedAt,
@@ -415,7 +475,7 @@ func backupHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	backup := "backup_" + time.Now().Format("2006-01-02-15-0405") + ".tar.gz"
+	backup := "backup_" + time.Now().Format("2006-01-02-15-0405")
 	go func() {
 		startedAt := time.Now()
 		if err := performBackup(instance, backup, tagsSet.ToMap(), partSize, startedAt, r); err != nil {
@@ -457,44 +517,27 @@ func backupHandler(w http.ResponseWriter, r *http.Request) {
 func deleteHandler(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 	instance := vars["name"]
-	backup := vars["backup"]
+	backupName := vars["backup"]
 
 	if instance == "" {
 		writeErrorResponse(w, errors.New("instance name cannot be empty"))
 		return
 	}
 
-	if backup == "" {
+	if backupName == "" {
 		writeErrorResponse(w, errors.New("backup name cannot be empty"))
 		return
 	}
 
-	prefix := path.Join(path.Clean(instance), backup)
+	bkp := backup{
+		instance:   instance,
+		backupName: backupName,
+	}
 
-	opts := minio.RemoveObjectOptions{}
-	for obj := range globalContext.Clnt.ListObjects(context.Background(), globalContext.Bucket, minio.ListObjectsOptions{
-		Prefix:       prefix,
-		WithVersions: true,
-	}) {
-		if obj.Err != nil {
-			switch minio.ToErrorResponse(obj.Err).Code {
-			case "NotImplemented":
-				// fallback for ListObjectVersions not implemented.
-				if err := globalContext.Clnt.RemoveObject(context.Background(), globalContext.Bucket, prefix, opts); err != nil {
-					writeErrorResponse(w, err)
-					return
-				}
-			default:
-				writeErrorResponse(w, obj.Err)
-				return
-			}
-		} else {
-			opts.VersionID = obj.VersionID
-			if err := globalContext.Clnt.RemoveObject(context.Background(), globalContext.Bucket, obj.Key, opts); err != nil {
-				writeErrorResponse(w, err)
-				return
-			}
-		}
+	err := globalContext.DeleteBackup(bkp)
+	if err != nil {
+		writeErrorResponse(w, err)
+		return
 	}
 
 	writeSuccessResponse(w, nil, true)
@@ -571,25 +614,10 @@ func listHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var backups []backupInfo
-	for obj := range globalContext.Clnt.ListObjects(context.Background(), globalContext.Bucket, minio.ListObjectsOptions{
-		Prefix:       instance,
-		Recursive:    true,
-		WithMetadata: true,
-	}) {
-		if obj.Err != nil {
-			writeErrorResponse(w, obj.Err)
-			return
-		}
-		optimized := obj.UserMetadata["X-Amz-Meta-Optimized"] == "true"
-		compressed := obj.UserMetadata["X-Amz-Meta-Compressed"] == "true"
-		backups = append(backups, backupInfo{
-			Name:       path.Base(obj.Key),
-			Created:    &obj.LastModified,
-			Size:       obj.Size,
-			Optimized:  &optimized,
-			Compressed: &compressed,
-		})
+	backups, err := globalContext.ListBackups(instance)
+	if err != nil {
+		writeErrorResponse(w, err)
+		return
 	}
 
 	writeSuccessResponse(w, backups, true)

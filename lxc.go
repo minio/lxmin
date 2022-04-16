@@ -21,12 +21,17 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"io/ioutil"
+	"os"
 	"os/exec"
+	"path"
 	"strings"
 
 	"github.com/charmbracelet/bubbles/spinner"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/minio/minio-go/v7/pkg/set"
+	"gopkg.in/yaml.v2"
 )
 
 const (
@@ -194,4 +199,176 @@ func checkInstance(instance string) error {
 		return fmt.Errorf("'%s' instance is already running by this name: %w", instance, instanceExists)
 	}
 	return nil
+}
+
+// listProfiles - lists profiles with lxc and returns a list of profile names
+// attached to the given instance.
+func listProfiles(instance string) ([]string, error) {
+	var outBuf bytes.Buffer
+	cmd := exec.Command("lxc", "config", "show", instance)
+	cmd.Stdout = &outBuf
+
+	if err := cmd.Run(); err != nil {
+		return nil, err
+	}
+
+	type profileInfo struct {
+		Profiles []string `yaml:"profiles"`
+	}
+
+	var profiles profileInfo
+	if err := yaml.Unmarshal(outBuf.Bytes(), &profiles); err != nil {
+		return nil, fmt.Errorf("Unable to parse profiles list: %v", err)
+	}
+	return profiles.Profiles, nil
+}
+
+// exportProfile - exports profile from lxc and saves it at dstPath.
+func exportProfile(profile, dstPath string) (int64, error) {
+	pf, err := os.Create(dstPath)
+	if err != nil {
+		return -1, fmt.Errorf("Unable to create backup file %s: %v", dstPath, err)
+	}
+	cmd := exec.Command("lxc", "profile", "show", profile)
+	cmd.Stdout = pf
+	if err := cmd.Run(); err != nil {
+		return -1, err
+	}
+
+	// Sync file to disk
+	if err := pf.Sync(); err != nil {
+		return -1, fmt.Errorf("Error syncing profile file %s to disk: %v", dstPath, err)
+	}
+
+	// Save size of the file for showing progress later.
+	stat, err := pf.Stat()
+	if err != nil {
+		return -1, fmt.Errorf("Unable to stat file %s: %v", dstPath, err)
+	}
+
+	// Close the file
+	if err := pf.Close(); err != nil {
+		return -1, fmt.Errorf("Unable to close file %s: %v", dstPath, err)
+	}
+
+	return stat.Size(), nil
+}
+
+func exportInstance(instance, dstFile string, optimized bool) (int64, error) {
+	cmd := exec.Command("lxc", "export", instance, dstFile)
+	if optimized {
+		cmd = exec.Command("lxc", "export", "--optimized-storage", instance, dstFile)
+	}
+	cmd.Stdout = ioutil.Discard
+
+	if err := cmd.Run(); err != nil {
+		return -1, err
+	}
+
+	s, err := os.Stat(dstFile)
+	if err != nil {
+		return -1, fmt.Errorf("Unable to stat file %s: %v", dstFile, err)
+	}
+	return s.Size(), nil
+}
+
+func fetchExistingProfiles() (s set.StringSet, err error) {
+	// First get the list of existing profiles, so we can restore
+	// only missing ones.
+	var outBuf bytes.Buffer
+	cmd := exec.Command("lxc", "profile", "list", "-f", "yaml")
+	cmd.Stdout = &outBuf
+
+	if err := cmd.Run(); err != nil {
+		return s, err
+	}
+
+	type profileInfo struct {
+		Name string `yaml:"name"`
+	}
+
+	var profileInfos []profileInfo
+	if err := yaml.Unmarshal(outBuf.Bytes(), &profileInfos); err != nil {
+		return nil, fmt.Errorf("Unable to parse profiles list: %v", err)
+	}
+
+	s = set.NewStringSet()
+	for _, pi := range profileInfos {
+		s.Add(pi.Name)
+	}
+	return s, nil
+}
+
+type warnMsgErr struct {
+	msg warningMessage
+}
+
+func (w warnMsgErr) Error() string {
+	return ""
+}
+
+func restoreProfile(ctx *lxminContext, profile, profileKey string, existingProfiles set.StringSet) error {
+	proPath := path.Join(ctx.StagingRoot, path.Base(profileKey))
+
+	if existingProfiles.Contains(profile) {
+		defer os.Remove(proPath)
+		return warnMsgErr{msg: warningMessage{
+			msg: `%s Skipping profile ` + profile + ` as it already exists for: %s`,
+		}}
+	}
+
+	cmd := exec.Command("lxc", "profile", "create", profile)
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("Error creating profile %s: %v", profile, err)
+	}
+
+	profileFile, err := os.Open(proPath)
+	if err != nil {
+		return fmt.Errorf("Error opening backup file %s: %v", proPath, err)
+	}
+
+	cmd = exec.Command("lxc", "profile", "edit", profile)
+	cmd.Stdin = profileFile
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("Error restoring profile %s: %v", profile, err)
+	}
+
+	defer os.Remove(proPath)
+	return nil
+}
+
+func restoreInstance(ctx *lxminContext, bkp backup) (*bytes.Buffer, error) {
+	outBuf := bytes.Buffer{}
+	localPath := path.Join(ctx.StagingRoot, bkp.backupName+"_instance.tar.gz")
+
+	lastCmd := []string{"lxc", "import", localPath}
+	cmd := exec.Command(lastCmd[0], lastCmd[1:]...)
+	cmd.Stdout = ioutil.Discard
+	cmd.Stderr = &outBuf
+	if err := cmd.Run(); err != nil {
+		errBuf := bytes.Buffer{}
+		errBuf.Write([]byte(
+			fmt.Sprintf("Command: %s\n", strings.Join(lastCmd, " ")),
+		))
+		errBuf.Write(outBuf.Bytes())
+		return &errBuf, fmt.Errorf("Error importing instance: %v", err)
+	}
+
+	// Clear outBuf for next command
+	outBuf = bytes.Buffer{}
+	lastCmd = []string{"lxc", "start", bkp.instance}
+	cmd = exec.Command(lastCmd[0], lastCmd[1:]...)
+	cmd.Stdout = ioutil.Discard
+	cmd.Stderr = &outBuf
+	if err := cmd.Run(); err != nil {
+		errBuf := bytes.Buffer{}
+		errBuf.Write([]byte(
+			fmt.Sprintf("Command: %s\n", strings.Join(lastCmd, " ")),
+		))
+		errBuf.Write(outBuf.Bytes())
+		return &errBuf, fmt.Errorf("Error starting instance: %v", err)
+	}
+
+	defer os.Remove(localPath)
+	return nil, nil
 }
