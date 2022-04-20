@@ -185,7 +185,7 @@ var globalBackupState = &backupState{
 	backups: map[string]*backupReader{},
 }
 
-func performBackup(instance, backup string, tagsMap map[string]string, partSize int64, startedAt time.Time, r *http.Request) error {
+func performBackup(instance, backupName string, tagsMap map[string]string, partSize int64, startedAt time.Time, r *http.Request) error {
 	notifyEndpoint, err := url.QueryUnescape(r.Form.Get("notifyEndpoint"))
 	if err != nil {
 		return err
@@ -194,15 +194,15 @@ func performBackup(instance, backup string, tagsMap map[string]string, partSize 
 	notifyEvent(eventInfo{
 		OpType:    Backup,
 		State:     Started,
-		Name:      backup,
+		Name:      backupName,
 		Instance:  instance,
 		StartedAt: &startedAt,
 		RawURL:    r.URL.String(),
 	}, notifyEndpoint)
 
 	bkReader := &backupReader{Started: true}
-	globalBackupState.Store(backup, bkReader)
-	defer globalBackupState.Pop(backup)
+	globalBackupState.Store(backupName, bkReader)
+	defer globalBackupState.Pop(backupName)
 
 	// Export profiles to files.
 
@@ -219,7 +219,7 @@ func performBackup(instance, backup string, tagsMap map[string]string, partSize 
 	for pno, profile := range profiles {
 		// Profiles are numbered because their order matters - settings
 		// in the later profiles override those from earlier profiles.
-		profileFile := fmt.Sprintf("%s_profile_%03d_%s.yaml", backup, pno, profile)
+		profileFile := fmt.Sprintf("%s_profile_%03d_%s.yaml", backupName, pno, profile)
 		profilePath := path.Join(globalContext.StagingRoot, profileFile)
 
 		prSize, err := exportProfile(profile, profilePath)
@@ -235,7 +235,7 @@ func performBackup(instance, backup string, tagsMap map[string]string, partSize 
 
 	// Export instance to tarball
 
-	instanceBkpFilename := backup + "_instance.tar.gz"
+	instanceBkpFilename := backupName + "_instance.tar.gz"
 	localPath := path.Join(globalContext.StagingRoot, instanceBkpFilename)
 	optimized := r.Form.Get("optimize") == "true"
 	instanceSize, err := exportInstance(instance, localPath, optimized)
@@ -246,7 +246,7 @@ func performBackup(instance, backup string, tagsMap map[string]string, partSize 
 	// Upload instance tarball to MinIO.
 
 	bkReader.Size = instanceSize
-	globalBackupState.Store(backup, bkReader)
+	globalBackupState.Store(backupName, bkReader)
 
 	usermetadata := map[string]string{}
 	// Save additional information if the backup is optimized or not.
@@ -268,7 +268,8 @@ func performBackup(instance, backup string, tagsMap map[string]string, partSize 
 	defer f.Close()
 	defer os.Remove(localPath)
 
-	_, err = globalContext.Clnt.PutObject(context.Background(), globalContext.Bucket, path.Join(instance, backup), f, instanceSize, opts)
+	bkp := backup{instance: instance, backupName: backupName}
+	_, err = globalContext.Clnt.PutObject(context.Background(), globalContext.Bucket, bkp.key(), f, instanceSize, opts)
 	if err != nil {
 		return err
 	}
@@ -306,7 +307,7 @@ func performBackup(instance, backup string, tagsMap map[string]string, partSize 
 	notifyEvent(eventInfo{
 		OpType:      Backup,
 		State:       Success,
-		Name:        backup,
+		Name:        backupName,
 		Instance:    instance,
 		StartedAt:   &startedAt,
 		CompletedAt: &completedAt,
