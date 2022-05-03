@@ -28,7 +28,7 @@ import (
 var deleteFlags = []cli.Flag{
 	cli.BoolFlag{
 		Name:  "all",
-		Usage: "delete all backups for an instance, only valid for 'delete' command",
+		Usage: "delete all backups for an instance",
 	},
 	cli.BoolFlag{
 		Name:  "force",
@@ -72,9 +72,19 @@ func deleteMain(c *cli.Context) error {
 	}
 
 	backupName := strings.TrimSpace(c.Args().Get(1))
-	deleteAll := c.Bool("all") && c.Bool("force")
+	deleteAll := c.Bool("all")
+	isForceOn := c.Bool("force")
+
+	if backupName != "" && deleteAll {
+		return errors.New("backup name is not required with --all")
+	}
+
 	if backupName == "" && !deleteAll {
-		return errors.New("backup name is not optional without --all")
+		return errors.New("Use the --all flag to delete all backups or provide a backup name")
+	}
+
+	if backupName != "" && deleteAll && !isForceOn {
+		return errors.New("DANGEROUS operation: this will delete **all** backups for the given instance - if you are sure add the --force flag")
 	}
 
 	var err error
