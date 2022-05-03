@@ -39,6 +39,8 @@ import (
 	"github.com/minio/minio-go/v7/pkg/tags"
 )
 
+var errNotifyEpRequired = errors.New("a notification endpoint is required")
+
 // ResponseType represents a valid LXD response type
 type ResponseType string
 
@@ -185,12 +187,7 @@ var globalBackupState = &backupState{
 	backups: map[string]*backupReader{},
 }
 
-func performBackup(instance, backupName string, tagsMap map[string]string, partSize int64, startedAt time.Time, r *http.Request) error {
-	notifyEndpoint, err := url.QueryUnescape(r.Form.Get("notifyEndpoint"))
-	if err != nil {
-		return err
-	}
-
+func performBackup(instance, backupName string, tagsMap map[string]string, partSize int64, startedAt time.Time, notifyEndpoint string, r *http.Request) error {
 	notifyEvent(eventInfo{
 		OpType:    Backup,
 		State:     Started,
@@ -316,12 +313,7 @@ func performBackup(instance, backupName string, tagsMap map[string]string, partS
 	return err
 }
 
-func performRestore(instance, backupName string, startedAt time.Time, r *http.Request) error {
-	notifyEndpoint, err := url.QueryUnescape(r.Form.Get("notifyEndpoint"))
-	if err != nil {
-		return err
-	}
-
+func performRestore(instance, backupName string, startedAt time.Time, notifyEndpoint string, r *http.Request) error {
 	notifyEvent(eventInfo{
 		OpType:    Restore,
 		State:     Started,
@@ -416,9 +408,18 @@ func restoreHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if notifyEndpoint == "" {
+		notifyEndpoint = globalContext.NotifyEndpoint
+	}
+
+	if notifyEndpoint == "" {
+		writeErrorResponse(w, errNotifyEpRequired)
+		return
+	}
+
 	go func() {
 		startedAt := time.Now()
-		if err := performRestore(instance, backup, startedAt, r); err != nil {
+		if err := performRestore(instance, backup, startedAt, notifyEndpoint, r); err != nil {
 			failedAt := time.Now()
 			notifyEvent(eventInfo{
 				OpType:    Restore,
@@ -476,13 +477,22 @@ func backupHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if notifyEndpoint == "" {
+		notifyEndpoint = globalContext.NotifyEndpoint
+	}
+
+	if notifyEndpoint == "" {
+		writeErrorResponse(w, errNotifyEpRequired)
+		return
+	}
+
 	backup := "backup_" + time.Now().Format("2006-01-02-15-0405")
 	go func() {
 		startedAt := time.Now()
-		if err := performBackup(instance, backup, tagsSet.ToMap(), partSize, startedAt, r); err != nil {
+		if err := performBackup(instance, backup, tagsSet.ToMap(), partSize, startedAt, notifyEndpoint, r); err != nil {
 			failedAt := time.Now()
 			notifyEvent(eventInfo{
-				OpType:    Restore,
+				OpType:    Backup,
 				State:     Failed,
 				Name:      backup,
 				Instance:  instance,

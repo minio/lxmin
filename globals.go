@@ -78,6 +78,7 @@ func setGlobalsFromContext(c *cli.Context) error {
 		globalContext.RootCAs = rootCAs
 	}
 
+	globalContext.NotifyEndpoint = c.String("notify-endpoint")
 	globalContext.NotifyClnt = &http.Client{
 		Transport: &http.Transport{
 			Proxy: http.ProxyFromEnvironment,
