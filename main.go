@@ -82,6 +82,11 @@ var globalFlags = []cli.Flag{
 		Usage:  "TLS trust certs for incoming clients",
 	},
 	cli.StringFlag{
+		Name:   "notify-endpoint",
+		EnvVar: "LXMIN_NOTIFY_ENDPOINT",
+		Usage:  "HTTP(S) POST endpoint to send notifications for REST API",
+	},
+	cli.StringFlag{
 		Name:   "staging",
 		EnvVar: "LXMIN_STAGING_ROOT",
 		Usage:  "root path for staging the backups before uploading to MinIO",

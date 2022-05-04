@@ -31,30 +31,32 @@ COMMANDS:
   info        pretty print tags on an instance image on MinIO
   list, ls    list all backups from MinIO
   delete, rm  deletes a specific backup by 'name' for an instance from MinIO
-
+  
 GLOBAL FLAGS:
-  --endpoint value    endpoint for MinIO server [$LXMIN_ENDPOINT]
-  --bucket value      bucket to save/restore backup(s) [$LXMIN_BUCKET]
-  --access-key value  access key credential [$LXMIN_ACCESS_KEY]
-  --secret-key value  secret key credential [$LXMIN_SECRET_KEY]
-  --address value     enable TLS REST API service [$LXMIN_ADDRESS]
-  --cert value        TLS server certificate [$LXMIN_TLS_CERT]
-  --key value         TLS server private key [$LXMIN_TLS_KEY]
-  --capath value      TLS trust certs for incoming clients [$LXMIN_TLS_CAPATH]
-  --staging value     root path for staging the backups before uploading to MinIO [$LXMIN_STAGING_ROOT]
-  --help, -h          show help
-
+  --endpoint value         endpoint for MinIO server [$LXMIN_ENDPOINT]
+  --bucket value           bucket to save/restore backup(s) [$LXMIN_BUCKET]
+  --access-key value       access key credential [$LXMIN_ACCESS_KEY]
+  --secret-key value       secret key credential [$LXMIN_SECRET_KEY]
+  --address value          enable TLS REST API service [$LXMIN_ADDRESS]
+  --cert value             TLS server certificate [$LXMIN_TLS_CERT]
+  --key value              TLS server private key [$LXMIN_TLS_KEY]
+  --capath value           TLS trust certs for incoming clients [$LXMIN_TLS_CAPATH]
+  --notify-endpoint value  HTTP(S) POST endpoint to send notifications for REST API [$LXMIN_NOTIFY_ENDPOINT]
+  --staging value          root path for staging the backups before uploading to MinIO [$LXMIN_STAGING_ROOT]
+  --help, -h               show help
+  
 ENVIRONMENT VARIABLES:
-  LXMIN_ENDPOINT      endpoint for MinIO server
-  LXMIN_BUCKET        bucket to save/restore backup(s)
-  LXMIN_ACCESS_KEY    access key credential
-  LXMIN_SECRET_KEY    secret key credential
-  LXMIN_ADDRESS       enable TLS REST API service
-  LXMIN_TLS_CERT      TLS server certificate
-  LXMIN_TLS_KEY       TLS server private key
-  LXMIN_TLS_CAPATH    TLS trust certs for incoming clients
-  LXMIN_STAGING_ROOT  root path for staging the backups before uploading to MinIO
-
+  LXMIN_ENDPOINT         endpoint for MinIO server
+  LXMIN_BUCKET           bucket to save/restore backup(s)
+  LXMIN_ACCESS_KEY       access key credential
+  LXMIN_SECRET_KEY       secret key credential
+  LXMIN_ADDRESS          enable TLS REST API service
+  LXMIN_TLS_CERT         TLS server certificate
+  LXMIN_TLS_KEY          TLS server private key
+  LXMIN_TLS_CAPATH       TLS trust certs for incoming clients
+  LXMIN_NOTIFY_ENDPOINT  HTTP(S) POST endpoint to send notifications for REST API
+  LXMIN_STAGING_ROOT     root path for staging the backups before uploading to MinIO
+  
 ```
 
 ## REST API
@@ -90,12 +92,12 @@ Response type for this API will be always `application/json`
 
 ### POST /1.0/instances/{name}/backups
 
-| Query Params   | Desc                                                                         |
-|:---------------|:-----------------------------------------------------------------------------|
-| optimize       | enables optimized backup for faster restore operations                       |
-| tags           | allow custom tags on the current backup                                      |
-| notifyEndpoint | notification endpoint for success/failed backup operation                    |
-| partSize       | custom part size used for uploading to MinIO storage, defaults to '67108864' |
+| Query Params   | Desc                                                                                |
+|:---------------|:------------------------------------------------------------------------------------|
+| optimize       | enables optimized backup for faster restore operations                              |
+| tags           | allow custom tags on the current backup                                             |
+| notifyEndpoint | notification endpoint for success/failed backup operation (overrides env/CLI value) |
+| partSize       | custom part size used for uploading to MinIO storage, defaults to '67108864'        |
 
 Response example:
 
@@ -168,9 +170,9 @@ Response example when backup is persisted:
 
 ### POST /1.0/instances/{name}/backups/{backup}
 
-| Query Params   | Desc                                                       |
-|:---------------|:-----------------------------------------------------------|
-| notifyEndpoint | notification endpoint for success/failed restore operation |
+| Query Params   | Desc                                                                                 |
+|:---------------|:-------------------------------------------------------------------------------------|
+| notifyEndpoint | notification endpoint for success/failed restore operation (overrides env/CLI value) |
 
 Response example:
 

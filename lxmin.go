@@ -41,12 +41,13 @@ type backupMeta struct {
 }
 
 type lxminContext struct {
-	Clnt        *minio.Client
-	Bucket      string
-	StagingRoot string
-	TLSCerts    *certs.Manager
-	RootCAs     *x509.CertPool
-	NotifyClnt  *http.Client
+	Clnt           *minio.Client
+	Bucket         string
+	StagingRoot    string
+	TLSCerts       *certs.Manager
+	RootCAs        *x509.CertPool
+	NotifyClnt     *http.Client
+	NotifyEndpoint string
 }
 
 // GetTags - fetch tags on the backup.

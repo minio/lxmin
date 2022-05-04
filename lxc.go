@@ -209,7 +209,7 @@ func listProfiles(instance string) ([]string, error) {
 	cmd.Stdout = &outBuf
 
 	if err := cmd.Run(); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("Unable get instance config: %v", err)
 	}
 
 	type profileInfo struct {
@@ -232,7 +232,7 @@ func exportProfile(profile, dstPath string) (int64, error) {
 	cmd := exec.Command("lxc", "profile", "show", profile)
 	cmd.Stdout = pf
 	if err := cmd.Run(); err != nil {
-		return -1, err
+		return -1, fmt.Errorf("Unable to export profile: %v", err)
 	}
 
 	// Sync file to disk
@@ -262,7 +262,7 @@ func exportInstance(instance, dstFile string, optimized bool) (int64, error) {
 	cmd.Stdout = ioutil.Discard
 
 	if err := cmd.Run(); err != nil {
-		return -1, err
+		return -1, fmt.Errorf("Unable to export instance: %v", err)
 	}
 
 	s, err := os.Stat(dstFile)
@@ -280,7 +280,7 @@ func fetchExistingProfiles() (s set.StringSet, err error) {
 	cmd.Stdout = &outBuf
 
 	if err := cmd.Run(); err != nil {
-		return s, err
+		return s, fmt.Errorf("Unable to list profiles: %v", err)
 	}
 
 	type profileInfo struct {
