@@ -625,6 +625,11 @@ func listHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Allow obtaining all backups
+	if instance == "*" {
+		instance = ""
+	}
+
 	backups, err := globalContext.ListBackups(instance)
 	if err != nil {
 		writeErrorResponse(w, err)
