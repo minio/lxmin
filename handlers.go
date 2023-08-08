@@ -135,7 +135,6 @@ func (s *successResponse) Render(w http.ResponseWriter) {
 }
 
 type backupInfo struct {
-	instance   string            `json:"omitempty"` // name of instance for the backup - not shown in json
 	Instance   string            `json:"instance,omitempty"`
 	Name       string            `json:"name"`
 	Created    *time.Time        `json:"created,omitempty"`

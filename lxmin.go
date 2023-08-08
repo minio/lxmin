@@ -144,7 +144,6 @@ func objToBackupInfo(obj minio.ObjectInfo, instance string) backupInfo {
 	optimized := obj.UserMetadata["X-Amz-Meta-Optimized"] == "true"
 	compressed := obj.UserMetadata["X-Amz-Meta-Compressed"] == "true"
 	return backupInfo{
-		instance:   instance,
 		Instance:   instance,
 		Name:       backupName,
 		Created:    &obj.LastModified,
