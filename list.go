@@ -88,7 +88,7 @@ func listMain(c *cli.Context) error {
 
 	data := map[string][]string{}
 	for _, bkp := range backups {
-		data["Instance"] = append(data["Instance"], bkp.instance)
+		data["Instance"] = append(data["Instance"], bkp.Instance)
 		data["Name"] = append(data["Name"], bkp.Name)
 		data["Created"] = append(data["Created"], bkp.Created.Format(printDate))
 		data["Size"] = append(data["Size"], humanize.IBytes(uint64(bkp.Size)))
