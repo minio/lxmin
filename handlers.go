@@ -135,7 +135,7 @@ func (s *successResponse) Render(w http.ResponseWriter) {
 }
 
 type backupInfo struct {
-	instance   string            // name of instance for the backup - not shown in json
+	Instance   string            `json:"instance,omitempty"`
 	Name       string            `json:"name"`
 	Created    *time.Time        `json:"created,omitempty"`
 	Size       int64             `json:"size,omitempty"`
@@ -623,6 +623,11 @@ func listHandler(w http.ResponseWriter, r *http.Request) {
 	if instance == "" {
 		writeErrorResponse(w, errors.New("instance name cannot be empty"))
 		return
+	}
+
+	// Allow obtaining all backups
+	if instance == "*" {
+		instance = ""
 	}
 
 	backups, err := globalContext.ListBackups(instance)
