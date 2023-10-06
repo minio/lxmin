@@ -31,7 +31,7 @@ import (
 	"github.com/cheggaaa/pb/v3"
 	"github.com/minio/minio-go/v7"
 	"github.com/minio/minio-go/v7/pkg/tags"
-	"github.com/minio/pkg/certs"
+	"github.com/minio/pkg/v2/certs"
 )
 
 type backupMeta struct {

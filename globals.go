@@ -28,7 +28,7 @@ import (
 	"github.com/minio/cli"
 	"github.com/minio/minio-go/v7"
 	"github.com/minio/minio-go/v7/pkg/credentials"
-	"github.com/minio/pkg/certs"
+	"github.com/minio/pkg/v2/certs"
 )
 
 var globalContext *lxminContext
