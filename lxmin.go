@@ -150,6 +150,7 @@ func objToBackupInfo(obj minio.ObjectInfo, instance string) backupInfo {
 		Size:       obj.Size,
 		Optimized:  &optimized,
 		Compressed: &compressed,
+		Tags:       obj.UserTags,
 	}
 }
 
